@@ -1,7 +1,7 @@
 {
   "name": "spin",
   "productName": "Spin",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "description": "A minimal, very personal music player for your music folder. Spin the record to seek.",
   "author": "Spin contributors",
   "main": "main.js",

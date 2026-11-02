@@ -4,6 +4,8 @@ A minimal music player for the music folder you already have. Open a folder, pre
 
 No accounts, no cloud, no library to organise. Everything Spin learns stays on your computer.
 
+[![Spin in 16 seconds. Select to watch with sound.](docs/spin-promo.gif)](docs/spin-promo.mp4)
+
 ![The Spin widget](docs/widget.png)
 
 ![The style panel, with the record gallery](docs/style-panel.png)
@@ -42,6 +44,8 @@ xattr -cr /Applications/Spin.app
 - **Global hotkeys, crates and a year in review.** Switch between named folders, and see your own listening stats.
 
 ## Keys
+
+Every main control has a button, and these shortcuts do the same things.
 
 | Key | Action | Key | Action |
 |---|---|---|---|

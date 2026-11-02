@@ -36,19 +36,35 @@
   #title {
     font-family: var(--display); font-weight: var(--title-weight); font-stretch: 75%;
     line-height: .92; letter-spacing: -.02em; text-transform: var(--title-case);
-    color: var(--title-color); overflow-wrap: anywhere; font-size: 12vw; padding-bottom: .16em;
+    color: var(--title-color); overflow-wrap: normal; font-size: 12vw; padding-bottom: .16em;
   }
 
   #bar {
     position: fixed; left: 24px; right: 24px; bottom: 14px;
-    display: flex; flex-wrap: wrap; align-items: center; gap: 0 18px; min-height: 40px;
+    display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 4px 12px; min-height: 40px;
   }
-  #time { font-variant-numeric: tabular-nums; margin-right: auto; }
-  #bar button { padding: 8px 0; color: var(--fg); transition: color .15s; white-space: nowrap; }
-  #bar button:hover { color: var(--accent); }
+  #time { font-variant-numeric: tabular-nums; }
+  #transport { display: flex; align-items: center; justify-content: center; gap: 6px; }
+  #tools { display: flex; align-items: center; justify-content: flex-end; gap: 2px; }
+  #bar button {
+    position: relative; display: inline-flex; align-items: center; justify-content: center;
+    width: 38px; height: 38px; border-radius: 50%; color: var(--fg); transition: color .15s, background .15s, transform .1s;
+  }
+  #bar button:hover { color: var(--accent); background: color-mix(in srgb, var(--fg) 10%, transparent); }
+  #bar button:active { transform: scale(.92); }
   #bar button.on { color: var(--accent); }
-  #bar kbd { font: inherit; color: var(--dim); margin-right: 5px; }
-  #bar button.on kbd, #bar button:hover kbd { color: inherit; }
+  #bar svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  #b-prev svg, #b-next svg, #b-play svg, #bar svg .solid { fill: currentColor; stroke: none; }
+  #bar #b-play { width: 52px; height: 52px; margin: 0 4px; background: var(--fg); color: var(--bg); }
+  #bar #b-play.on { color: var(--bg); }
+  #bar #b-play:hover { background: var(--accent); color: var(--bg); }
+  #bar #b-play svg { width: 26px; height: 26px; }
+  #bar #b-repeat[data-mode="one"]::after {
+    content: '1'; position: absolute; right: 4px; bottom: 4px; min-width: 13px; height: 13px; border-radius: 7px;
+    font: 700 9px/13px var(--mono); text-align: center; background: var(--accent); color: var(--bg);
+  }
+  #vol-slider { width: 84px; margin: 0 8px 0 2px; accent-color: var(--accent); cursor: pointer; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
   #queue {
     position: fixed; top: 0; right: 0; bottom: 0; width: min(440px, 100vw);
@@ -96,7 +112,7 @@
   body.native #toast { top: 44px; }
 
   #lights, #mini, #mini-controls, #b-mini { display: none; }
-  body.native #b-mini { display: inline; }
+  body.native #bar #b-mini { display: inline-flex; }
   body.native #lights {
     display: flex; position: fixed; top: 0; right: 0; z-index: 3; -webkit-app-region: no-drag;
   }
@@ -171,9 +187,10 @@
 
   @media (pointer: coarse) { #bar button { min-height: 44px; } }
   @media (max-width: 720px) {
-    #now { bottom: 132px; left: 16px; right: 16px; }
+    #now { left: 16px; right: 16px; }
     #bar { left: 16px; right: 16px; }
-    #bar kbd { display: none; }
+    #bar { grid-template-columns: 1fr; justify-items: center; }
+  #vol-slider { width: 64px; }
     #time { width: 100%; }
     #toast { left: 16px; }
   }
@@ -252,17 +269,22 @@
 
 <div id="bar">
   <span id="time" aria-live="off">--:-- / --:--</span>
-  <button id="b-open"><kbd>o</kbd>open</button>
-  <button id="b-prev" aria-label="Previous track"><kbd>p</kbd>prev</button>
-  <button id="b-play"><kbd>space</kbd><span id="play-label">play</span></button>
-  <button id="b-next" aria-label="Next track"><kbd>n</kbd>next</button>
-  <button id="b-shuffle" aria-pressed="false"><kbd>s</kbd>shuffle</button>
-  <button id="b-repeat"><kbd>r</kbd>repeat:<span id="repeat-label">all</span></button>
-  <button id="b-mute"><kbd>m</kbd>vol:<span id="vol-label">80</span></button>
-  <button id="b-queue" aria-expanded="false"><kbd>q</kbd>queue:<span id="count">0</span></button>
-  <button id="b-mini"><kbd>e</kbd>mini</button>
-  <button id="b-style"><kbd>t</kbd>style</button>
-  <button id="b-more"><kbd>?</kbd>more</button>
+  <div id="transport">
+    <button id="b-shuffle" aria-label="Shuffle" aria-pressed="false" title="Shuffle (s)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 4h4v4M4 20 20 4M20 16v4h-4M15 15l5 5M4 4l5 5"/></svg></button>
+    <button id="b-prev" aria-label="Previous track" title="Previous (p)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h2v14H6zM20 5v14L9 12z"/></svg></button>
+    <button id="b-play" title="Play or pause (space)"><svg viewBox="0 0 24 24" aria-hidden="true"><path id="b-play-icon" d="M7 5v14l12-7z"/></svg><span id="play-label" class="sr">play</span></button>
+    <button id="b-next" aria-label="Next track" title="Next (n)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 5h2v14h-2zM4 5v14l11-7z"/></svg></button>
+    <button id="b-repeat" title="Repeat: all, one or off (r)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 2l4 4-4 4M3 11V9a3 3 0 0 1 3-3h15M7 22l-4-4 4-4M21 13v2a3 3 0 0 1-3 3H3"/></svg><span class="sr">Repeat: </span><span id="repeat-label" class="sr">all</span></button>
+  </div>
+  <div id="tools">
+    <button id="b-mute" title="Mute (m)" aria-label="Mute"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="solid" d="M4 9v6h4l5 4V5L8 9z"/><path id="vol-waves" d="M16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/></svg><span id="vol-label" class="sr">80</span></button>
+    <input id="vol-slider" type="range" min="0" max="1" step="0.01" aria-label="Volume" title="Volume (up and down arrows)">
+    <button id="b-open" aria-label="Open a folder" title="Open a folder (o)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></button>
+    <button id="b-queue" aria-expanded="false" aria-label="Queue" title="Queue (q)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h10M17 13v7l4-3.5z"/></svg><span id="count" class="sr">0</span></button>
+    <button id="b-style" aria-label="Style" title="Style (t)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18c1.2 0 2-.8 2-1.8 0-1.3-1-1.7-1-2.7 0-.9.7-1.5 1.6-1.5H17a4 4 0 0 0 4-4c0-4.4-4-8-9-8zM7.5 12h.01M10 7.5h.01M15 7.5h.01"/></svg></button>
+    <button id="b-mini" aria-label="Small widget" title="Small widget (e)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v16H4zM12 12h8v8h-8z"/></svg></button>
+    <button id="b-more" aria-label="All keys and features" title="More (?)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h.01M12 12h.01M19 12h.01"/></svg></button>
+  </div>
 </div>
 
 <aside id="queue" aria-label="Queue">
@@ -1093,7 +1115,9 @@ function savePosition() {
 
 function updatePlayLabel() {
   if (scratch) return;
-  $('m-play-icon').setAttribute('d', audio.paused ? 'M7 5v14l12-7z' : 'M7 5h4v14H7zM13 5h4v14h-4z');
+  const playPath = audio.paused ? 'M7 5v14l12-7z' : 'M7 5h4v14H7zM13 5h4v14h-4z';
+  $('m-play-icon').setAttribute('d', playPath);
+  $('b-play-icon').setAttribute('d', playPath);
   $('play-label').textContent = audio.paused ? 'play' : 'pause';
   $('b-play').classList.toggle('on', !audio.paused);
   if ('mediaSession' in navigator) navigator.mediaSession.playbackState = audio.paused ? 'paused' : 'playing';
@@ -1150,10 +1174,12 @@ function fitTitle() {
   const maxHeight = innerHeight * .38;
   let size = Math.min(innerWidth * .16, innerHeight * .3);
   el.style.fontSize = size + 'px';
+  el.style.overflowWrap = '';
   while (size > 22 && (el.scrollHeight > Math.min(size * 2.25, maxHeight) || el.scrollWidth > box)) {
     size *= .92;
     el.style.fontSize = size + 'px';
   }
+  if (el.scrollWidth > box) el.style.overflowWrap = 'anywhere';
 }
 
 const accent = { r: 255, g: 77, b: 46 };
@@ -1240,6 +1266,7 @@ function setRepeat(mode) {
   state.repeat = mode;
   store.set('repeat', mode);
   $('repeat-label').textContent = mode;
+  $('b-repeat').dataset.mode = mode;
   $('b-repeat').classList.toggle('on', mode !== 'off');
 }
 
@@ -1247,7 +1274,10 @@ function setRepeat(mode) {
 function applyVolume() {
   audio.volume = Math.max(0, Math.min(1, state.volume * (gameActive() ? memory.gameScale : 1)));
   $('vol-label').textContent = audio.muted ? 0 : Math.round(audio.volume * 100);
-  $('b-mute').classList.toggle('on', audio.muted || audio.volume === 0);
+  const silent = audio.muted || audio.volume === 0;
+  $('b-mute').classList.toggle('on', silent);
+  $('vol-waves').setAttribute('d', silent ? 'M16 9l5 6M21 9l-5 6' : 'M16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11');
+  $('vol-slider').value = silent ? 0 : audio.volume;
 }
 function setVolume(v) {
   state.volume = Math.max(0, Math.min(1, Math.round(v * 100) / 100));
@@ -1285,6 +1315,8 @@ $('b-next').addEventListener('click', skipNext);
 $('b-shuffle').addEventListener('click', () => setShuffle(!state.shuffle));
 $('b-repeat').addEventListener('click', cycleRepeat);
 $('b-mute').addEventListener('click', toggleMute);
+$('vol-slider').addEventListener('input', e => nudgeVolume(Number(e.target.value) - audio.volume));
+$('vol-slider').addEventListener('pointerup', e => e.target.blur());
 $('b-queue').addEventListener('click', () => toggleQueue());
 $('b-mini').addEventListener('click', () => setWindowMode('mini'));
 $('m-prev').addEventListener('click', previous);
