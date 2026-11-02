@@ -1,0 +1,3289 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>spin</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='15' fill='%23ff4d2e'/%3E%3Ccircle cx='16' cy='16' r='4' fill='%230a0a0b'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #0a0a0b;
+    --fg: #f4f2ee;
+    --dim: color-mix(in srgb, var(--fg) 62%, transparent);
+    --title-color: #fff;
+    --title-blend: difference;
+    --title-weight: 700;
+    --title-case: uppercase;
+    --accent: #ff4d2e;
+    --display: Bahnschrift, "DIN Condensed", "Arial Narrow", "Liberation Sans Narrow", "Segoe UI", "Noto Sans", sans-serif;
+    --mono: "Cascadia Code", "SF Mono", Consolas, Menlo, "DejaVu Sans Mono", "Noto Sans Mono", monospace;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--fg); }
+  body { font: 13px/1.4 var(--mono); }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  #stage { position: fixed; inset: 0; width: 100%; height: 100%; touch-action: none; }
+
+  /* The title inverts whatever passes behind it, including the ring. */
+  #now {
+    position: fixed; left: 24px; right: 24px; bottom: 64px;
+    mix-blend-mode: var(--title-blend); pointer-events: none;
+  }
+  #artist { color: var(--title-color); margin-bottom: 8px; letter-spacing: .04em; min-height: 1.4em; }
+  #title {
+    font-family: var(--display); font-weight: var(--title-weight); font-stretch: 75%;
+    line-height: .92; letter-spacing: -.02em; text-transform: var(--title-case);
+    color: var(--title-color); overflow-wrap: anywhere; font-size: 12vw; padding-bottom: .16em;
+  }
+
+  #bar {
+    position: fixed; left: 24px; right: 24px; bottom: 14px;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 0 18px; min-height: 40px;
+  }
+  #time { font-variant-numeric: tabular-nums; margin-right: auto; }
+  #bar button { padding: 8px 0; color: var(--fg); transition: color .15s; white-space: nowrap; }
+  #bar button:hover { color: var(--accent); }
+  #bar button.on { color: var(--accent); }
+  #bar kbd { font: inherit; color: var(--dim); margin-right: 5px; }
+  #bar button.on kbd, #bar button:hover kbd { color: inherit; }
+
+  #queue {
+    position: fixed; top: 0; right: 0; bottom: 0; width: min(440px, 100vw);
+    display: flex; flex-direction: column;
+    background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(24px);
+    border-left: 1px solid color-mix(in srgb, var(--fg) 10%, transparent);
+    transform: translateX(100%); visibility: hidden;
+    transition: transform .28s cubic-bezier(.2, .8, .2, 1), visibility .28s;
+  }
+  /* Visible immediately on open, otherwise the filter cannot take focus from the / key. */
+  #queue.open { transform: none; visibility: visible; transition: transform .28s cubic-bezier(.2, .8, .2, 1), visibility 0s; }
+  #filter {
+    font: inherit; color: var(--fg); background: none; border: 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--fg) 14%, transparent); padding: 18px 20px; outline: 0;
+  }
+  #filter:focus { border-bottom-color: var(--accent); }
+  #filter::placeholder { color: var(--dim); }
+  #list { flex: 1; overflow-y: auto; padding: 6px 0; scrollbar-width: thin; }
+  .row {
+    display: flex; gap: 14px; width: 100%; padding: 7px 20px; text-align: start;
+    color: var(--fg);
+  }
+  .row:hover { background: color-mix(in srgb, var(--fg) 7%, transparent); }
+  .row[hidden] { display: none; }
+  .row i { font-style: normal; color: var(--dim); font-variant-numeric: tabular-nums; flex: none; }
+  .row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .row.current, .row.current i { color: var(--accent); }
+
+  #toast {
+    position: fixed; top: 20px; left: 24px; color: var(--accent);
+    opacity: 0; transition: opacity .2s; pointer-events: none;
+  }
+  #toast.show { opacity: 1; }
+
+  #drop {
+    position: fixed; inset: 12px; border: 2px dashed var(--accent); border-radius: 12px;
+    opacity: 0; pointer-events: none; transition: opacity .12s;
+  }
+  body.dragging #drop { opacity: 1; }
+
+  /* Desktop app: no system title bar, so the top strip moves the window. */
+  #dragbar { display: none; }
+  body.native #dragbar { display: block; position: fixed; top: 0; left: 0; right: 0; height: 36px; -webkit-app-region: drag; }
+  body.native #queue { padding-top: 36px; }
+  body.native #toast { top: 44px; }
+
+  #lights, #mini, #mini-controls, #b-mini { display: none; }
+  body.native #b-mini { display: inline; }
+  body.native #lights {
+    display: flex; position: fixed; top: 0; right: 0; z-index: 3; -webkit-app-region: no-drag;
+  }
+  #lights button { display: flex; align-items: center; justify-content: center; width: 40px; height: 32px; color: var(--dim); }
+  #lights button:hover { color: var(--fg); background: color-mix(in srgb, var(--fg) 12%, transparent); }
+  #lights #w-close:hover { color: #fff; background: #e81123; }
+  #lights svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1; }
+  body.mini #lights button { width: 28px; height: 26px; }
+
+  /* Mini mode: the floating widget. The canvas keeps drawing the disc on the left. */
+  body.mini { overflow: hidden; }
+  body.mini #dragbar { height: 26px; }
+  body.mini #bar, body.mini #queue { display: none; }
+  body.native.mini #now {
+    display: flex; flex-direction: column-reverse; justify-content: flex-end;
+    top: 28px; left: 118px; right: 14px; bottom: auto; height: 46px;
+    mix-blend-mode: normal; -webkit-app-region: drag;
+  }
+  body.mini #title {
+    padding-bottom: 0; color: var(--fg); font-family: var(--display); font-size: 19px; line-height: 1.25; letter-spacing: 0; text-transform: none;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  body.mini #artist {
+    color: var(--dim); font-size: 12px; margin: 0; min-height: 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  body.mini #mini { display: block; position: fixed; left: 118px; right: 14px; top: 78px; }
+  #mini-times { display: flex; justify-content: space-between; font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums; }
+  #mini-track { display: flex; align-items: center; height: 14px; cursor: pointer; touch-action: none; }
+  #mini-rail { flex: 1; height: 4px; border-radius: 2px; background: color-mix(in srgb, var(--fg) 18%, transparent); overflow: hidden; }
+  #mini-fill { display: block; height: 100%; width: 0; background: var(--accent); }
+  body.mini #mini-controls {
+    display: flex; gap: 2px; position: fixed; top: 3px; left: 10px; -webkit-app-region: no-drag;
+  }
+  #mini-controls button { display: flex; padding: 2px; color: var(--fg); }
+  #mini-controls button:hover { color: var(--accent); }
+  #mini-controls svg { width: 16px; height: 16px; fill: currentColor; }
+  body.native.mini #toast { top: 6px; left: 84px; right: 92px; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* Game mode: only the record stays on screen until the pointer comes near. */
+  body.compact #now, body.compact #mini, body.compact #lights, body.compact #mini-controls,
+  body.compact #dragbar, body.compact #toast { display: none !important; }
+
+  #sheet {
+    position: fixed; inset: 0; z-index: 2; display: none; overflow-y: auto;
+    padding: 56px 24px 32px; background: color-mix(in srgb, var(--bg) 94%, transparent); backdrop-filter: blur(24px);
+  }
+  #sheet.open { display: block; }
+  #sheet > div { max-width: 760px; margin: 0 auto; }
+  .sheet-big {
+    font-family: var(--display); font-weight: var(--title-weight); font-stretch: 75%; line-height: .95;
+    letter-spacing: -.02em; text-transform: var(--title-case); font-size: clamp(56px, 13vw, 150px); color: var(--accent);
+  }
+  .sheet-sub { color: var(--dim); margin: 10px 0 28px; }
+  .sheet-row {
+    display: flex; align-items: baseline; gap: 14px; width: 100%; padding: 7px 0; text-align: start;
+    border-bottom: 1px solid color-mix(in srgb, var(--fg) 8%, transparent);
+  }
+  .sheet-row span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sheet-row i { font-style: normal; color: var(--dim); flex: none; font-variant-numeric: tabular-nums; }
+  .sheet-row.current, .sheet-row.current i { color: var(--accent); }
+  .sheet-row input {
+    flex: 1; min-width: 0; font: inherit; color: var(--fg); background: none; border: 0;
+    border-bottom: 1px solid var(--accent); outline: 0;
+  }
+  .sheet-row .crate-open { flex: 1; min-width: 0; text-align: start; color: inherit; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sheet-row .crate-open:hover, .sheet-row .crate-action:hover { color: var(--accent); }
+  .sheet-row .crate-action { color: var(--dim); }
+  .sheet-add { padding: 12px 0; color: var(--dim); }
+  .sheet-add:hover { color: var(--accent); }
+  .sheet-title { margin: 26px 0 8px; color: var(--dim); }
+
+  @media (pointer: coarse) { #bar button { min-height: 44px; } }
+  @media (max-width: 720px) {
+    #now { bottom: 132px; left: 16px; right: 16px; }
+    #bar { left: 16px; right: 16px; }
+    #bar kbd { display: none; }
+    #time { width: 100%; }
+    #toast { left: 16px; }
+  }
+  @media (prefers-reduced-motion: reduce) { #queue { transition: none; } }
+
+  /* Style panel: sits beside the record so every change is visible as it happens. */
+  #style {
+    position: fixed; top: 0; right: 0; bottom: 0; width: min(380px, 100vw); z-index: 2;
+    overflow-y: auto; padding: 44px 18px 24px; scrollbar-width: thin;
+    background: color-mix(in srgb, var(--bg) 92%, transparent); backdrop-filter: blur(24px);
+    border-left: 1px solid color-mix(in srgb, var(--fg) 10%, transparent);
+    display: none;
+  }
+  body.styling #style { display: block; }
+  body.native #style { top: 32px; padding-top: 12px; }
+  body.styling #now, body.styling #bar { right: 404px; }
+  #style h2 { font: inherit; color: var(--dim); margin: 20px 0 8px; }
+  #style h2:first-of-type { margin-top: 0; }
+  #style .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  #style .chip {
+    padding: 5px 9px; border: 1px solid color-mix(in srgb, var(--fg) 18%, transparent); border-radius: 6px; color: var(--fg);
+  }
+  #style .chip:hover { border-color: var(--accent); }
+  #style .chip.on { border-color: var(--accent); color: var(--accent); }
+  #style .gallery { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  #style .thumb {
+    display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 5px 0 4px;
+    border: 1px solid transparent; border-radius: 8px; color: var(--dim); font-size: 11px;
+  }
+  #style .thumb:hover { background: color-mix(in srgb, var(--fg) 7%, transparent); }
+  #style .thumb.on { border-color: var(--accent); color: var(--accent); }
+  #style .thumb canvas { width: 64px; height: 64px; }
+  #style .field { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 32px; }
+  #style .field > span { flex: none; }
+  #style input[type=color] { width: 44px; height: 24px; padding: 0; border: 0; background: none; cursor: pointer; }
+  #style input[type=range] { flex: 1; min-width: 0; max-width: 190px; accent-color: var(--accent); }
+  #style select, #style input[type=text] {
+    flex: 1; min-width: 0; max-width: 220px; font: inherit; color: var(--fg); background: var(--bg);
+    border: 1px solid color-mix(in srgb, var(--fg) 18%, transparent); border-radius: 6px; padding: 4px 6px;
+  }
+  #style .libtile {
+    display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; padding: 5px 2px 4px;
+    border: 1px solid transparent; border-radius: 8px; color: var(--dim); font-size: 11px;
+  }
+  #style .libtile:hover { background: color-mix(in srgb, var(--fg) 7%, transparent); }
+  #style .libtile.on { border-color: var(--accent); color: var(--accent); }
+  #style .libtile canvas { width: 64px; height: 64px; }
+  #style .libtile span { width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #style .chips { margin-top: 6px; }
+  #style .note { color: var(--accent); margin-top: 6px; }
+  #style .hint { color: var(--dim); font-size: 12px; margin-top: 6px; }
+</style>
+</head>
+<body>
+<canvas id="stage"></canvas>
+<div id="dragbar"></div>
+<div id="lights">
+  <button id="w-min" aria-label="Minimize" title="Minimize"><svg viewBox="0 0 10 10"><path d="M0 5.5h10"/></svg></button>
+  <button id="w-mode" aria-label="Switch between mini and full view" title="Mini / full (e)"><svg viewBox="0 0 10 10"><rect x=".5" y=".5" width="9" height="9"/></svg></button>
+  <button id="w-close" aria-label="Close" title="Close"><svg viewBox="0 0 10 10"><path d="M.5.5l9 9M9.5.5l-9 9"/></svg></button>
+</div>
+<div id="mini-controls">
+  <button id="m-prev" aria-label="Previous track"><svg viewBox="0 0 24 24"><path d="M6 5h2v14H6zM20 5v14L9 12z"/></svg></button>
+  <button id="m-play" aria-label="Play or pause"><svg viewBox="0 0 24 24"><path id="m-play-icon" d="M7 5v14l12-7z"/></svg></button>
+  <button id="m-next" aria-label="Next track"><svg viewBox="0 0 24 24"><path d="M16 5h2v14h-2zM4 5v14l11-7z"/></svg></button>
+</div>
+<div id="mini">
+  <div id="mini-times"><span id="mini-cur">--:--</span><span id="mini-dur">--:--</span></div>
+  <div id="mini-track"><div id="mini-rail"><span id="mini-fill"></span></div></div>
+</div>
+
+<div id="now">
+  <div id="artist" dir="auto"></div>
+  <h1 id="title" dir="auto">Open a folder</h1>
+</div>
+
+<div id="bar">
+  <span id="time" aria-live="off">--:-- / --:--</span>
+  <button id="b-open"><kbd>o</kbd>open</button>
+  <button id="b-prev" aria-label="Previous track"><kbd>p</kbd>prev</button>
+  <button id="b-play"><kbd>space</kbd><span id="play-label">play</span></button>
+  <button id="b-next" aria-label="Next track"><kbd>n</kbd>next</button>
+  <button id="b-shuffle" aria-pressed="false"><kbd>s</kbd>shuffle</button>
+  <button id="b-repeat"><kbd>r</kbd>repeat:<span id="repeat-label">all</span></button>
+  <button id="b-mute"><kbd>m</kbd>vol:<span id="vol-label">80</span></button>
+  <button id="b-queue" aria-expanded="false"><kbd>q</kbd>queue:<span id="count">0</span></button>
+  <button id="b-mini"><kbd>e</kbd>mini</button>
+  <button id="b-style"><kbd>t</kbd>style</button>
+  <button id="b-more"><kbd>?</kbd>more</button>
+</div>
+
+<aside id="queue" aria-label="Queue">
+  <input id="filter" type="search" placeholder="/ filter, enter to play, esc to close" aria-label="Filter tracks" autocomplete="off" spellcheck="false">
+  <div id="list"></div>
+</aside>
+
+<aside id="style" aria-label="Style"></aside>
+<div id="sheet" role="dialog" aria-modal="true"></div>
+<div id="toast" role="status"></div>
+<div id="drop"></div>
+<input id="picker" type="file" webkitdirectory multiple hidden>
+<input id="sticker-picker" type="file" accept="image/*" hidden>
+<input id="theme-file" type="file" hidden>
+
+<audio id="audio" preload="auto"></audio>
+
+<script>
+const $ = id => document.getElementById(id);
+const audio = $('audio');
+const AUDIO_EXT = /\.(mp3|flac|m4a|aac|ogg|oga|opus|wav|weba|webm)$/i;
+const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+const store = {
+  get(key, fallback) {
+    try { const v = localStorage.getItem('spin.' + key); return v === null ? fallback : JSON.parse(v); }
+    catch { return fallback; }
+  },
+  set(key, value) {
+    try { localStorage.setItem('spin.' + key, JSON.stringify(value)); } catch {}
+  },
+};
+
+/* ---------- theme: everything a person can restyle ---------- */
+
+const DEFAULT_THEME = {
+  bg: '#0a0a0b', fg: '#f4f2ee', accentMode: 'auto', accent: '#ff4d2e',
+  titleColor: 'invert', displayFont: '', uiFont: '', titleWeight: 700, titleCase: 'upper',
+  disc: 'vinyl', discColor: '#131315', labelMode: 'accent', labelColor: '#ff4d2e',
+  discText: '🎧', imageShape: 'circle', cover: 'fill', spin: 1,
+  ring: 'bars', glow: 1, size: 1, bgDim: .55, fonts: [],
+};
+const THEME_CHOICES = {
+  accentMode: ['auto', 'fixed'], titleColor: ['invert', 'fg', 'accent'], titleCase: ['upper', 'none'],
+  labelMode: ['accent', 'custom'], cover: ['fill', 'label', 'off'],
+  imageShape: ['circle', 'rounded', 'square', 'hex', 'star', 'heart', 'original'],
+  ring: ['bars', 'dots', 'blocks', 'line', 'thin', 'none'],
+};
+const THEME_RANGES = { titleWeight: [100, 900], spin: [-3, 3], glow: [0, 2], size: [.6, 1.25], bgDim: [0, 1] };
+const THEME_COLOURS = ['bg', 'fg', 'accent', 'discColor', 'labelColor'];
+const DISC_NAMES = ['vinyl', 'gold', 'clear', 'splatter', 'solid', 'cd', 'cassette', 'neon', 'wire', 'vortex', 'radar', 'shuriken', 'gear', 'sun', 'planet', 'flower', 'pixel', 'emoji', 'image', 'speaker', 'platter', 'reel', 'minidisc', 'wheel', 'shellac', 'eq', 'plasma', 'lava', 'matrix', 'stars', 'pulse', 'fire', 'hypno', 'scope', 'glitch', 'mandala', 'aurora'];
+const PRESETS = {
+  Spin: {},
+  Midnight: { bg: '#0b1026', fg: '#e8ecff', discColor: '#151b3a', titleColor: 'fg', accentMode: 'fixed', accent: '#6ea8ff', disc: 'clear', ring: 'line' },
+  Paper: { bg: '#f3efe6', fg: '#1d1b18', discColor: '#1d1b18', titleColor: 'fg', accentMode: 'fixed', accent: '#d1381f', displayFont: 'Georgia', titleCase: 'none', titleWeight: 400, glow: .4, ring: 'thin' },
+  Terminal: { bg: '#050805', fg: '#7dff8a', discColor: '#0a120a', titleColor: 'fg', accentMode: 'fixed', accent: '#35ff5a', displayFont: 'Cascadia Code', uiFont: 'Cascadia Code', titleWeight: 400, titleCase: 'none', disc: 'wire', ring: 'blocks', glow: .5 },
+  Synthwave: { bg: '#14062b', fg: '#ffe9fb', discColor: '#1f0a3f', titleColor: 'accent', accentMode: 'fixed', accent: '#ff3dcb', displayFont: 'Impact', titleWeight: 400, disc: 'neon', ring: 'line', glow: 1.8 },
+  Aegis: { bg: '#120606', fg: '#f5e6c8', discColor: '#2a0c0c', titleColor: 'fg', accentMode: 'fixed', accent: '#e0a526', displayFont: 'Georgia', titleWeight: 700, disc: 'gold', ring: 'bars', glow: 1.2 },
+  Mono: { bg: '#000000', fg: '#ffffff', discColor: '#161616', accentMode: 'fixed', accent: '#ffffff', labelMode: 'custom', labelColor: '#ffffff', glow: 0, ring: 'thin' },
+  Acid: { bg: '#07010f', fg: '#f6f0ff', discColor: '#12062a', titleColor: 'fg', accentMode: 'fixed', accent: '#b14dff', disc: 'plasma', ring: 'line', glow: 1.6 },
+  Rain: { bg: '#000000', fg: '#a9ffb8', discColor: '#001203', titleColor: 'fg', accentMode: 'fixed', accent: '#20e34a', displayFont: 'Consolas', uiFont: 'Consolas', titleCase: 'none', titleWeight: 400, disc: 'matrix', ring: 'blocks', glow: .6 },
+  Deck: { bg: '#151515', fg: '#eeeeee', discColor: '#222222', titleColor: 'fg', accentMode: 'fixed', accent: '#ff5a1f', disc: 'platter', ring: 'thin', glow: .3 },
+  Inferno: { bg: '#140400', fg: '#ffe9c9', discColor: '#260800', titleColor: 'accent', accentMode: 'fixed', accent: '#ff6a00', displayFont: 'Impact', titleWeight: 400, disc: 'fire', ring: 'dots', glow: 1.7 },
+  Tape: { bg: '#2b1d14', fg: '#f4e3c5', discColor: '#3f2a1c', titleColor: 'fg', accentMode: 'fixed', accent: '#ef8d32', displayFont: 'Courier New', titleCase: 'none', disc: 'cassette', ring: 'dots', glow: .7 },
+};
+
+/* Themes can come from an imported file, so only known keys with sane values get through. */
+function cleanTheme(input) {
+  const out = { ...DEFAULT_THEME };
+  if (!input || typeof input !== 'object') return out;
+  for (const key of THEME_COLOURS) if (/^#[0-9a-f]{6}$/i.test(input[key])) out[key] = input[key];
+  for (const [key, list] of Object.entries(THEME_CHOICES)) if (list.includes(input[key])) out[key] = input[key];
+  for (const [key, [min, max]] of Object.entries(THEME_RANGES)) {
+    if (typeof input[key] === 'number' && isFinite(input[key])) out[key] = Math.max(min, Math.min(max, input[key]));
+  }
+  for (const key of ['displayFont', 'uiFont', 'discText']) if (typeof input[key] === 'string') out[key] = input[key].slice(0, 80);
+  if (DISC_NAMES.includes(input.disc)) out.disc = input.disc;
+  if (Array.isArray(input.fonts)) out.fonts = input.fonts.filter(f => typeof f === 'string').slice(0, 50);
+  return out;
+}
+
+let theme = cleanTheme(store.get('theme', null));
+const themeImages = { disc: null, bg: null };
+
+function hexToRgb(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return { r: n >> 16, g: (n >> 8) & 255, b: n & 255 };
+}
+function luminance(hex) {
+  const { r, g, b } = hexToRgb(hex);
+  const f = v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4; };
+  return .2126 * f(r) + .7152 * f(g) + .0722 * f(b);
+}
+const isLight = hex => luminance(hex) > .4;
+function contrast(a, b) {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+  return (hi + .05) / (lo + .05);
+}
+function fgAlpha(a, hex = theme.fg) {
+  const { r, g, b } = hexToRgb(hex);
+  return `rgba(${r},${g},${b},${a})`;
+}
+const fontStack = (name, fallback) => (name ? `"${name.replace(/["\\]/g, '')}", ${fallback}` : fallback);
+
+const state = {
+  tracks: [],
+  order: [],
+  pos: -1,
+  shuffle: store.get('shuffle', false),
+  repeat: store.get('repeat', 'all'),
+  folder: '',
+  loadId: 0,
+  failures: 0,
+  direction: 1,
+  objectUrl: null,
+  coverUrl: null,
+  cover: null,
+  scrub: null,
+  volume: store.get('volume', .8),
+  cued: false,
+  crate: null,
+  heard: 0,
+  counted: false,
+  lastTime: 0,
+  sticker: null,
+  stickerKey: null,
+  wear: 0,
+  scuffs: [],
+  sheet: null,
+  sheetFromMini: false,
+};
+
+const current = () => state.tracks[state.order[state.pos]];
+
+/* ---------- memory: what Spin learns from listening, stored only on this machine ---------- */
+
+let memory = { tracks: {}, crates: [], gameScale: 1 };
+let memoryDirty = false;
+
+function saveMemory() {
+  if (!memoryDirty) return;
+  memoryDirty = false;
+  if (window.spinNative) window.spinNative.saveMemory(JSON.stringify(memory));
+  else store.set('memory', memory);
+}
+setInterval(saveMemory, 15000);
+
+const peek = t => memory.tracks[t.key];
+function record(t) {
+  memoryDirty = true;
+  return memory.tracks[t.key] ||= { plays: 0, finishes: 0, skips: 0, seconds: 0, hours: {}, years: {}, marks: [] };
+}
+
+function historySize() {
+  return Object.values(memory.tracks).reduce((sum, r) => sum + r.plays, 0);
+}
+
+/* Songs you finish come up more, songs you skip come up less, nothing ever disappears. */
+function trackWeight(t, now = new Date()) {
+  const r = peek(t);
+  if (!r) return 1;
+  let weight = (r.finishes + 2) / (r.finishes + r.skips * 2 + 2) * (1 + Math.min(r.finishes, 20) * .03);
+  if (r.last && now - r.last < 3 * 3600e3) weight *= .6;
+
+  /* Once there is enough history, lean towards what you usually play at this hour. */
+  const total = Object.values(r.hours).reduce((a, b) => a + b, 0);
+  if (total >= 5 && historySize() >= 50) {
+    const h = now.getHours();
+    const near = [h + 23, h, h + 1].reduce((sum, x) => sum + (r.hours[x % 24] || 0), 0);
+    weight *= .7 + near / total * 2.4;
+  }
+  return Math.max(.05, weight);
+}
+
+function noteListening() {
+  const t = current();
+  const now = audio.currentTime;
+  const delta = now - state.lastTime;
+  state.lastTime = now;
+  if (!t || audio.paused || delta <= 0 || delta > 2) return;
+  const r = record(t);
+  const year = new Date().getFullYear();
+  r.seconds += delta;
+  r.years[year] = (r.years[year] || 0) + delta;
+  r.title = t.title;
+  r.artist = t.artist;
+  state.heard += delta;
+  if (!state.counted && isFinite(audio.duration) && state.heard >= Math.min(30, audio.duration * .5)) {
+    state.counted = true;
+    r.plays++;
+    r.last = Date.now();
+    const hour = new Date().getHours();
+    r.hours[hour] = (r.hours[hour] || 0) + 1;
+  }
+}
+
+function skipNext() {
+  const t = current();
+  if (t && isFinite(audio.duration) && state.heard < Math.min(30, audio.duration * .4)) record(t).skips++;
+  step(1, true);
+}
+
+/* ---------- folder memory: a directory handle survives reloads in IndexedDB ---------- */
+
+function handleDb(mode, run) {
+  return new Promise((resolve, reject) => {
+    const open = indexedDB.open('spin', 1);
+    open.onupgradeneeded = () => open.result.createObjectStore('kv');
+    open.onerror = () => reject(open.error);
+    open.onsuccess = () => {
+      const req = run(open.result.transaction('kv', mode).objectStore('kv'));
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    };
+  });
+}
+const saveHandle = handle => handleDb('readwrite', s => s.put(handle, 'folder')).catch(() => {});
+const loadHandle = () => handleDb('readonly', s => s.get('folder')).catch(() => null);
+
+let savedHandle = null;
+
+/* ---------- reading folders ---------- */
+
+async function walkHandle(dir, prefix, out) {
+  for await (const entry of dir.values()) {
+    const path = prefix + entry.name;
+    if (entry.kind === 'directory') await walkHandle(entry, path + '/', out);
+    else if (AUDIO_EXT.test(entry.name)) out.push({ path, getFile: () => entry.getFile() });
+  }
+  return out;
+}
+
+async function walkEntry(entry, out) {
+  if (entry.isFile) {
+    if (AUDIO_EXT.test(entry.name)) {
+      const path = entry.fullPath.replace(/^\//, '');
+      out.push({ path, getFile: () => new Promise((ok, no) => entry.file(ok, no)) });
+    }
+    return;
+  }
+  const reader = entry.createReader();
+  for (;;) {
+    const batch = await new Promise((ok, no) => reader.readEntries(ok, no));
+    if (!batch.length) return;
+    for (const child of batch) await walkEntry(child, out);
+  }
+}
+
+const native = window.spinNative;
+
+async function openNative(folder, autoplay) {
+  const { name, files } = await native.scan(folder);
+  store.set('folder', folder);
+  state.crate = memory.crates.find(c => c.folder === folder);
+  if (!state.crate) {
+    state.crate = { name, folder, shuffle: state.shuffle };
+    memory.crates.push(state.crate);
+    memoryDirty = true;
+  }
+  state.shuffle = state.crate.shuffle;
+  showShuffle(state.shuffle);
+  const tracks = files.filter(f => AUDIO_EXT.test(f.path)).map(f => ({
+    path: f.path,
+    url: f.url,
+    getFile: async () => diskFile(f.full, f.size),
+  }));
+  setLibrary(tracks, name, autoplay);
+}
+
+/* The part of the File interface tag reading needs, fetching only the bytes it asks for. */
+function diskFile(full, size, base = 0) {
+  return {
+    size,
+    slice(start = 0, end = size) {
+      const from = base + start;
+      return {
+        arrayBuffer: async () => {
+          const bytes = await native.readRange(full, from, Math.max(0, end - start));
+          return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+        },
+      };
+    },
+  };
+}
+
+async function openFolder() {
+  if (native) {
+    try {
+      const folder = await native.pickFolder();
+      if (folder) await openNative(folder, true);
+    } catch (err) {
+      toast(err.message);
+    }
+    return;
+  }
+  if (!window.showDirectoryPicker) return $('picker').click();
+  try {
+    const dir = await showDirectoryPicker({ id: 'spin', startIn: 'music' });
+    saveHandle(dir);
+    savedHandle = dir;
+    await openHandle(dir);
+  } catch (err) {
+    if (err.name !== 'AbortError') toast(err.message);
+  }
+}
+
+async function openHandle(dir) {
+  toast('scanning ' + dir.name);
+  setLibrary(await walkHandle(dir, '', []), dir.name);
+}
+
+async function resumeSaved() {
+  try {
+    if (await savedHandle.requestPermission({ mode: 'read' }) === 'granted') await openHandle(savedHandle);
+  } catch (err) {
+    toast(err.message);
+  }
+}
+
+$('picker').addEventListener('change', e => {
+  const files = [...e.target.files].filter(f => AUDIO_EXT.test(f.name));
+  const folder = files[0] ? files[0].webkitRelativePath.split('/')[0] : '';
+  setLibrary(files.map(f => ({ path: f.webkitRelativePath || f.name, getFile: async () => f })), folder);
+  e.target.value = '';
+});
+
+let dragDepth = 0;
+addEventListener('dragenter', e => { e.preventDefault(); dragDepth++; document.body.classList.add('dragging'); });
+addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; document.body.classList.remove('dragging'); } });
+addEventListener('dragover', e => e.preventDefault());
+addEventListener('drop', async e => {
+  e.preventDefault();
+  dragDepth = 0;
+  document.body.classList.remove('dragging');
+  const fonts = [...e.dataTransfer.files].filter(f => FONT_EXT.test(f.name));
+  if (fonts.length) return addFont(fonts[0]);
+  const skins = [...e.dataTransfer.files].filter(f => SKIN_EXT.test(f.name));
+  if (skins.length) {
+    toggleStyle(true);
+    return importSkin(skins[0]);
+  }
+  const moving = [...e.dataTransfer.files].filter(isMedia);
+  if (moving.length && (document.body.classList.contains('styling') || moving[0].type.startsWith('video/'))) return setThemeImage('disc', moving[0]);
+  const images = moving.filter(f => f.type.startsWith('image/'));
+  if (images.length) return setSticker(images[0], e.ctrlKey || e.metaKey ? 'app' : e.shiftKey ? 'album' : 'song');
+  const entries = [...e.dataTransfer.items].map(i => i.webkitGetAsEntry()).filter(Boolean);
+  const out = [];
+  for (const entry of entries) await walkEntry(entry, out);
+  setLibrary(out, entries.length === 1 ? entries[0].name : 'dropped files');
+});
+
+/* ---------- library and queue ---------- */
+
+function guessFromPath(path) {
+  const parts = path.split('/');
+  const base = parts.pop().replace(/\.[^.]+$/, '').replace(/^\d{1,3}[\s._-]+/, '').replace(/_/g, ' ');
+  const split = base.match(/^(.+?)\s+-\s+(.+)$/);
+  if (split) return { artist: split[1], title: split[2] };
+  return { artist: parts.pop() || '', title: base };
+}
+
+function setLibrary(tracks, folder, autoplay = true) {
+  if (!tracks.length) return toast('no audio files in ' + (folder || 'that folder'));
+  state.tracks = tracks
+    .sort((a, b) => collator.compare(a.path, b.path))
+    .map(t => ({ ...t, ...guessFromPath(t.path), tagged: false, key: folder + '/' + t.path }));
+  state.folder = folder;
+  state.failures = 0;
+  $('count').textContent = tracks.length;
+  buildOrder(0);
+  renderList();
+
+  const last = store.get('last:' + folder, store.get('last', null));
+  const resume = last && last.folder === folder ? state.tracks.findIndex(t => t.path === last.path) : -1;
+  if (resume >= 0) {
+    state.pos = state.order.indexOf(resume);
+    playCurrent(last.time, autoplay);
+  } else {
+    state.pos = 0;
+    playCurrent(0, autoplay);
+  }
+}
+
+function buildOrder(keepIndex) {
+  const n = state.tracks.length;
+  state.order = Array.from({ length: n }, (_, i) => i);
+  if (state.shuffle) {
+    /* Weighted random order: each track draws a random rank, biased by how much you like it. */
+    const now = new Date();
+    const rank = state.order.map(i => Math.pow(Math.random(), 1 / trackWeight(state.tracks[i], now)));
+    state.order.sort((a, b) => rank[b] - rank[a]);
+    const at = state.order.indexOf(keepIndex);
+    [state.order[0], state.order[at]] = [state.order[at], state.order[0]];
+    state.pos = 0;
+  } else {
+    state.pos = keepIndex;
+  }
+}
+
+function renderList() {
+  const width = String(state.tracks.length).length;
+  $('list').replaceChildren(...state.tracks.map((t, i) => {
+    const row = document.createElement('button');
+    row.className = 'row';
+    const num = document.createElement('i');
+    num.textContent = String(i + 1).padStart(width, '0');
+    const name = document.createElement('span');
+    name.dir = 'auto';
+    name.textContent = rowLabel(t);
+    row.append(num, name);
+    row.addEventListener('click', () => { state.pos = state.order.indexOf(i); playCurrent(); });
+    t.row = row;
+    return row;
+  }));
+  applyFilter();
+}
+
+const rowLabel = t => (t.artist ? t.artist + ' - ' : '') + t.title;
+
+function applyFilter() {
+  const words = $('filter').value.toLowerCase().split(/\s+/).filter(Boolean);
+  for (const t of state.tracks) {
+    const hay = (rowLabel(t) + ' ' + t.path).toLowerCase();
+    t.row.hidden = !words.every(w => hay.includes(w));
+  }
+}
+
+$('filter').addEventListener('input', applyFilter);
+$('filter').addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    const i = state.tracks.findIndex(t => !t.row.hidden);
+    if (i >= 0) { state.pos = state.order.indexOf(i); playCurrent(); }
+  } else if (e.key === 'Escape') {
+    e.stopPropagation();
+    toggleQueue(false);
+  }
+});
+
+const isMini = () => document.body.classList.contains('mini');
+
+async function setWindowMode(mode) {
+  if (!native) return;
+  if (mode === 'mini') toggleQueue(false);
+  applyWindowMode(await native.setMode(mode));
+}
+
+function applyWindowMode(mode) {
+  document.body.classList.toggle('mini', mode === 'mini');
+  document.body.classList.remove('compact');
+  resize();
+  fitTitle();
+  syncCompact();
+}
+
+function toggleQueue(open = !$('queue').classList.contains('open')) {
+  if (open && isMini()) setWindowMode('full');
+  $('queue').classList.toggle('open', open);
+  $('b-queue').classList.toggle('on', open);
+  $('b-queue').setAttribute('aria-expanded', open);
+  const t = current();
+  if (open && t) t.row.scrollIntoView({ block: 'center' });
+  if (!open && document.activeElement === $('filter')) $('filter').blur();
+}
+
+/* ---------- embedded tags: ID3v2.3/2.4 and FLAC, read only for the track being played ---------- */
+
+const decoders = { 0: 'latin1', 1: 'utf-16', 2: 'utf-16be', 3: 'utf-8' };
+const clean = s => s.replace(/\0+$/, '').split('\0')[0].trim();
+
+function nullEnd(bytes, from, enc) {
+  if (enc === 1 || enc === 2) {
+    for (let i = from; i + 1 < bytes.length; i += 2) if (!bytes[i] && !bytes[i + 1]) return i + 2;
+  } else {
+    const i = bytes.indexOf(0, from);
+    if (i >= 0) return i + 1;
+  }
+  return bytes.length;
+}
+
+async function readId3(file, head) {
+  const version = head[3];
+  if (version < 2) return {};
+  const size = (head[6] << 21) | (head[7] << 14) | (head[8] << 7) | head[9];
+  const bytes = new Uint8Array(await file.slice(10, 10 + Math.min(size, 3e7)).arrayBuffer());
+  const view = new DataView(bytes.buffer);
+  const tags = {};
+  const old = version === 2;
+  const headerSize = old ? 6 : 10;
+  let at = 0;
+  if (!old && head[5] & 0x40) {
+    at = version === 4
+      ? (bytes[0] << 21) | (bytes[1] << 14) | (bytes[2] << 7) | bytes[3]
+      : view.getUint32(0) + 4;
+  }
+  while (at + headerSize <= bytes.length && bytes[at]) {
+    const id = String.fromCharCode(...bytes.subarray(at, at + (old ? 3 : 4)));
+    const len = old
+      ? (bytes[at + 3] << 16) | (bytes[at + 4] << 8) | bytes[at + 5]
+      : version === 4
+        ? (bytes[at + 4] << 21) | (bytes[at + 5] << 14) | (bytes[at + 6] << 7) | bytes[at + 7]
+        : view.getUint32(at + 4);
+    const body = bytes.subarray(at + headerSize, at + headerSize + len);
+    if (id === 'TIT2' || id === 'TPE1' || id === 'TT2' || id === 'TP1') {
+      const text = clean(new TextDecoder(decoders[body[0]] || 'latin1').decode(body.subarray(1)));
+      if (id === 'TIT2' || id === 'TT2') tags.title = text; else tags.artist = text;
+    } else if (id === 'APIC' && !tags.picture) {
+      const enc = body[0];
+      const mimeEnd = body.indexOf(0, 1);
+      const mime = new TextDecoder('latin1').decode(body.subarray(1, mimeEnd));
+      const start = nullEnd(body, mimeEnd + 2, enc);
+      tags.picture = new Blob([body.slice(start)], { type: mime.includes('/') ? mime : 'image/jpeg' });
+    } else if (id === 'PIC' && !tags.picture) {
+      const start = nullEnd(body, 5, body[0]);
+      const png = String.fromCharCode(...body.subarray(1, 4)).toUpperCase() === 'PNG';
+      tags.picture = new Blob([body.slice(start)], { type: png ? 'image/png' : 'image/jpeg' });
+    }
+    at += headerSize + len;
+  }
+  return tags;
+}
+
+/* Vorbis comments are shared by FLAC, Ogg Vorbis and Opus. */
+function readVorbisComments(bytes, tags) {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const utf8 = new TextDecoder();
+  let p = 4 + view.getUint32(0, true);
+  const count = view.getUint32(p, true);
+  p += 4;
+  for (let i = 0; i < count && p + 4 <= bytes.length; i++) {
+    const n = view.getUint32(p, true);
+    const entry = utf8.decode(bytes.subarray(p + 4, p + 4 + n));
+    p += 4 + n;
+    const eq = entry.indexOf('=');
+    const key = entry.slice(0, eq).toUpperCase();
+    if (key === 'TITLE') tags.title = entry.slice(eq + 1);
+    if (key === 'ARTIST') tags.artist = entry.slice(eq + 1);
+    if (key === 'METADATA_BLOCK_PICTURE' && !tags.picture) {
+      tags.picture = readFlacPicture(Uint8Array.from(atob(entry.slice(eq + 1)), c => c.charCodeAt(0)));
+    }
+  }
+}
+
+function readFlacPicture(bytes) {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const mimeLen = view.getUint32(4);
+  const mime = new TextDecoder().decode(bytes.subarray(8, 8 + mimeLen));
+  let p = 8 + mimeLen;
+  p += 4 + view.getUint32(p) + 16;
+  const dataLen = view.getUint32(p);
+  return new Blob([bytes.slice(p + 4, p + 4 + dataLen)], { type: mime });
+}
+
+async function readFlac(file) {
+  const tags = {};
+  let at = 4;
+  for (;;) {
+    const h = new Uint8Array(await file.slice(at, at + 4).arrayBuffer());
+    if (h.length < 4) return tags;
+    const type = h[0] & 0x7f;
+    const len = (h[1] << 16) | (h[2] << 8) | h[3];
+    if (type === 4 || type === 6) {
+      const bytes = new Uint8Array(await file.slice(at + 4, at + 4 + len).arrayBuffer());
+      if (type === 4) readVorbisComments(bytes, tags);
+      else if (!tags.picture) tags.picture = readFlacPicture(bytes);
+    }
+    if (h[0] & 0x80) return tags;
+    at += 4 + len;
+  }
+}
+
+/* The second Ogg packet holds the comments, usually spread over the first few pages. */
+async function readOgg(file) {
+  const data = new Uint8Array(await file.slice(0, 8e6).arrayBuffer());
+  const packets = [[]];
+  let at = 0;
+  while (at + 27 <= data.length && packets.length < 3 && data[at] === 0x4f && data[at + 1] === 0x67) {
+    const segments = data[at + 26];
+    let body = at + 27 + segments;
+    for (let i = 0; i < segments; i++) {
+      const lace = data[at + 27 + i];
+      packets[packets.length - 1].push(data.subarray(body, body + lace));
+      body += lace;
+      if (lace < 255) packets.push([]);
+    }
+    at = body;
+  }
+  if (!packets[1]) return {};
+  const length = packets[1].reduce((sum, part) => sum + part.length, 0);
+  const packet = new Uint8Array(length);
+  let filled = 0;
+  for (const part of packets[1]) {
+    packet.set(part, filled);
+    filled += part.length;
+  }
+  const opus = String.fromCharCode(...packet.subarray(0, 8)) === 'OpusTags';
+  const vorbis = String.fromCharCode(...packet.subarray(1, 7)) === 'vorbis';
+  if (!opus && !vorbis) return {};
+  const tags = {};
+  readVorbisComments(packet.subarray(opus ? 8 : 7), tags);
+  return tags;
+}
+
+/* M4A: moov > udta > meta > ilst. The moov atom can sit at either end of the file. */
+async function readMp4(file) {
+  const atomName = bytes => String.fromCharCode(...bytes);
+  let at = 0, moov = null;
+  while (at + 8 <= file.size) {
+    const h = new Uint8Array(await file.slice(at, at + 16).arrayBuffer());
+    const view = new DataView(h.buffer);
+    let size = view.getUint32(0);
+    if (size === 1) size = Number(view.getBigUint64(8));
+    else if (size === 0) size = file.size - at;
+    if (size < 8) return {};
+    if (atomName(h.subarray(4, 8)) === 'moov') {
+      moov = new Uint8Array(await file.slice(at + 8, at + Math.min(size, 6e7)).arrayBuffer());
+      break;
+    }
+    at += size;
+  }
+  if (!moov) return {};
+  const find = (bytes, name, skip = 0) => {
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    let p = skip;
+    while (p + 8 <= bytes.length) {
+      const size = view.getUint32(p);
+      if (size < 8) return null;
+      if (atomName(bytes.subarray(p + 4, p + 8)) === name) return bytes.subarray(p + 8, p + size);
+      p += size;
+    }
+    return null;
+  };
+  const udta = find(moov, 'udta');
+  const meta = udta && find(udta, 'meta', 0);
+  const ilst = meta && (find(meta, 'ilst', 4) || find(meta, 'ilst', 0));
+  if (!ilst) return {};
+  const value = name => {
+    const item = find(ilst, name);
+    const data = item && find(item, 'data');
+    return data ? { type: new DataView(data.buffer, data.byteOffset).getUint32(0), body: data.subarray(8) } : null;
+  };
+  const text = name => {
+    const v = value(name);
+    return v ? new TextDecoder().decode(v.body) : undefined;
+  };
+  const tags = { title: text('\xa9nam'), artist: text('\xa9ART') || text('aART') };
+  const cover = value('covr');
+  if (cover) tags.picture = new Blob([cover.body.slice()], { type: cover.type === 14 ? 'image/png' : 'image/jpeg' });
+  return tags;
+}
+
+/* WAV: RIFF chunks, looking for LIST/INFO names or an embedded id3 chunk. */
+async function readWav(file) {
+  let at = 12;
+  const tags = {};
+  while (at + 8 <= file.size) {
+    const h = new Uint8Array(await file.slice(at, at + 12).arrayBuffer());
+    if (h.length < 8) break;
+    const id = String.fromCharCode(...h.subarray(0, 4)).toLowerCase();
+    const size = new DataView(h.buffer).getUint32(4, true);
+    if (id === 'list' && String.fromCharCode(...h.subarray(8, 12)) === 'INFO' && size < 1e6) {
+      const bytes = new Uint8Array(await file.slice(at + 12, at + 8 + size).arrayBuffer());
+      const view = new DataView(bytes.buffer);
+      let p = 0;
+      while (p + 8 <= bytes.length) {
+        const key = String.fromCharCode(...bytes.subarray(p, p + 4));
+        const n = view.getUint32(p + 4, true);
+        const value = clean(new TextDecoder().decode(bytes.subarray(p + 8, p + 8 + n)));
+        if (key === 'INAM' && value) tags.title = value;
+        if (key === 'IART' && value) tags.artist = value;
+        p += 8 + n + (n & 1);
+      }
+    } else if ((id === 'id3 ') && size < 3e7) {
+      const inner = {
+        slice: (a, b) => file.slice(at + 8 + a, at + 8 + b),
+      };
+      const head = new Uint8Array(await inner.slice(0, 10).arrayBuffer());
+      Object.assign(tags, await readId3(inner, head));
+    }
+    at += 8 + size + (size & 1);
+  }
+  return tags;
+}
+
+async function readId3v1(file) {
+  if (file.size < 128) return {};
+  const b = new Uint8Array(await file.slice(file.size - 128, file.size).arrayBuffer());
+  if (String.fromCharCode(b[0], b[1], b[2]) !== 'TAG') return {};
+  const text = (from, to) => clean(new TextDecoder('latin1').decode(b.subarray(from, to)));
+  return { title: text(3, 33) || undefined, artist: text(33, 63) || undefined };
+}
+
+async function readTags(file) {
+  try {
+    const head = new Uint8Array(await file.slice(0, 12).arrayBuffer());
+    const magic = String.fromCharCode(...head.subarray(0, 4));
+    if (magic.startsWith('ID3')) {
+      const tags = await readId3(file, head);
+      return tags.title ? tags : { ...await readId3v1(file), ...tags };
+    }
+    if (magic === 'fLaC') return await readFlac(file);
+    if (magic === 'OggS') return await readOgg(file);
+    if (magic === 'RIFF') return await readWav(file);
+    if (String.fromCharCode(...head.subarray(4, 8)) === 'ftyp') return await readMp4(file);
+    return await readId3v1(file);
+  } catch {}
+  return {};
+}
+
+/* ---------- playback ---------- */
+
+async function playCurrent(startAt = 0, autoplay = true) {
+  const t = current();
+  if (!t) return;
+  const id = ++state.loadId;
+  scratch = null;
+  state.scrub = null;
+  state.heard = 0;
+  state.counted = false;
+  state.lastTime = 0;
+  state.cued = !autoplay;
+  loadWear(t);
+  applySongVolume(t);
+  initAudioGraph();
+  showTrack(t);
+  markCurrent(t);
+  try {
+    const file = await t.getFile();
+    if (id !== state.loadId) return;
+    if (state.objectUrl) URL.revokeObjectURL(state.objectUrl);
+    state.objectUrl = t.url ? null : URL.createObjectURL(file);
+    /* Streams come from a custom scheme, so CORS mode is what lets the visualizer read them. */
+    audio.crossOrigin = t.url ? 'anonymous' : null;
+    audio.src = t.url || state.objectUrl;
+    if (startAt) audio.addEventListener('loadedmetadata', () => { audio.currentTime = startAt; }, { once: true });
+    if (autoplay) await audio.play().catch(err => { if (err.name === 'NotAllowedError') updatePlayLabel(); });
+    if (id !== state.loadId) return;
+    applyTags(t, await readTags(file), id);
+  } catch {
+    if (id === state.loadId) onTrackFailed();
+  }
+}
+
+async function applyTags(t, tags, id) {
+  if (tags.title) t.title = tags.title;
+  if (tags.artist) t.artist = tags.artist;
+  if (tags.title || tags.artist) t.row.querySelector('span').textContent = rowLabel(t);
+  let bitmap = null;
+  if (tags.picture) bitmap = await createImageBitmap(tags.picture).catch(() => null);
+  if (id !== state.loadId) return;
+  if (state.coverUrl) URL.revokeObjectURL(state.coverUrl);
+  state.coverUrl = bitmap ? URL.createObjectURL(tags.picture) : null;
+  state.cover = bitmap;
+  await loadSticker(t, id);
+  if (id !== state.loadId) return;
+  const art = bitmap || (state.sticker && state.sticker.bitmap);
+  setAccent(art ? accentFromImage(art) : accentFromText(t.title));
+  showTrack(t);
+}
+
+function onTrackFailed() {
+  const t = current();
+  toast('skipped ' + (t ? t.title : 'track') + ': cannot decode');
+  if (++state.failures >= state.tracks.length) {
+    state.failures = 0;
+    audio.pause();
+    return toast('nothing in this folder is playable');
+  }
+  step(state.direction, true);
+}
+
+function step(dir, wrap = state.repeat !== 'off') {
+  const n = state.tracks.length;
+  if (!n) return;
+  state.direction = dir;
+  const next = state.pos + dir;
+  if (!wrap && (next < 0 || next >= n)) {
+    audio.pause();
+    audio.currentTime = 0;
+    return;
+  }
+  state.pos = (next + n) % n;
+  playCurrent();
+}
+
+function previous() {
+  if (audio.currentTime > 3) audio.currentTime = 0;
+  else step(-1, true);
+}
+
+function togglePlay() {
+  if (scratch) return;
+  if (!state.tracks.length) return savedHandle ? resumeSaved() : openFolder();
+  initAudioGraph();
+  if (audio.paused) audio.play().catch(() => {});
+  else audio.pause();
+}
+
+audio.addEventListener('ended', () => {
+  if (current()) record(current()).finishes++;
+  if (state.repeat === 'one') { audio.currentTime = 0; audio.play(); }
+  else step(1);
+});
+audio.addEventListener('error', () => { if (audio.getAttribute('src')) onTrackFailed(); });
+audio.addEventListener('playing', () => { state.failures = 0; state.direction = 1; });
+audio.addEventListener('play', () => {
+  updatePlayLabel();
+  if (state.cued && !scratch) {
+    state.cued = false;
+    if (current()) showTrack(current());
+  }
+});
+audio.addEventListener('pause', updatePlayLabel);
+audio.addEventListener('timeupdate', () => { noteListening(); updateTime(); throttledSave(); });
+audio.addEventListener('durationchange', updateTime);
+addEventListener('pagehide', () => { savePosition(); saveMemory(); });
+
+let lastSave = 0;
+function throttledSave() {
+  if (Date.now() - lastSave > 5000) savePosition();
+}
+function savePosition() {
+  const t = current();
+  if (!t) return;
+  lastSave = Date.now();
+  store.set('last:' + state.folder, { folder: state.folder, path: t.path, time: audio.currentTime || 0 });
+}
+
+function updatePlayLabel() {
+  if (scratch) return;
+  $('m-play-icon').setAttribute('d', audio.paused ? 'M7 5v14l12-7z' : 'M7 5h4v14H7zM13 5h4v14h-4z');
+  $('play-label').textContent = audio.paused ? 'play' : 'pause';
+  $('b-play').classList.toggle('on', !audio.paused);
+  if ('mediaSession' in navigator) navigator.mediaSession.playbackState = audio.paused ? 'paused' : 'playing';
+}
+
+const clock = s => {
+  if (!isFinite(s)) return '--:--';
+  s = Math.max(0, Math.floor(s));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor(s / 60) % 60;
+  const sec = String(s % 60).padStart(2, '0');
+  return h ? `${h}:${String(m).padStart(2, '0')}:${sec}` : `${String(m).padStart(2, '0')}:${sec}`;
+};
+
+function updateTime() {
+  const shown = state.scrub === null ? audio.currentTime : state.scrub;
+  const index = state.tracks.length ? `${state.order[state.pos] + 1}/${state.tracks.length}  ` : '';
+  $('time').textContent = `${index}${clock(shown)} / ${clock(audio.duration)}`;
+  $('mini-cur').textContent = clock(shown);
+  $('mini-dur').textContent = clock(audio.duration);
+  $('mini-fill').style.width = (isFinite(audio.duration) && audio.duration ? shown / audio.duration * 100 : 0) + '%';
+}
+
+/* ---------- now playing ---------- */
+
+function showTrack(t) {
+  $('title').textContent = t.title;
+  $('artist').textContent = state.cued ? `${timeWord()}${userName ? ', ' + userName : ''}. Back to this?` : t.artist;
+  document.title = (t.artist ? t.artist + ' - ' : '') + t.title;
+  fitTitle();
+  updateTime();
+  if ('mediaSession' in navigator) {
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: t.title,
+      artist: t.artist,
+      album: state.folder,
+      artwork: state.coverUrl ? [{ src: state.coverUrl }] : [],
+    });
+  }
+}
+
+function markCurrent(t) {
+  for (const row of $('list').querySelectorAll('.current')) row.classList.remove('current');
+  t.row.classList.add('current');
+  if ($('queue').classList.contains('open')) t.row.scrollIntoView({ block: 'nearest' });
+}
+
+/* Largest size that fits two lines of the width, capped at a third of the screen height. */
+function fitTitle() {
+  const el = $('title');
+  el.parentElement.style.bottom = isMini() ? '' : $('bar').offsetHeight + 18 + 'px';
+  if (isMini()) { el.style.fontSize = ''; return; }
+  const box = el.parentElement.clientWidth;
+  const maxHeight = innerHeight * .38;
+  let size = Math.min(innerWidth * .16, innerHeight * .3);
+  el.style.fontSize = size + 'px';
+  while (size > 22 && (el.scrollHeight > Math.min(size * 2.25, maxHeight) || el.scrollWidth > box)) {
+    size *= .92;
+    el.style.fontSize = size + 'px';
+  }
+}
+
+const accent = { r: 255, g: 77, b: 46 };
+const accentTarget = { ...accent };
+
+function hslToRgb(h, s, l) {
+  const f = n => {
+    const k = (n + h / 30) % 12;
+    return 255 * (l - s * Math.min(l, 1 - l) * Math.max(-1, Math.min(k - 3, 9 - k, 1)));
+  };
+  return { r: f(0), g: f(8), b: f(4) };
+}
+
+let autoAccent = { ...accent };
+function setAccent(colour) {
+  autoAccent = colour;
+  refreshAccent();
+}
+function refreshAccent() {
+  const fixed = theme.accentMode === 'fixed';
+  const source = fixed ? hexToRgb(theme.accent) : autoAccent;
+  const k = !fixed && isLight(theme.bg) ? .68 : 1;
+  const r = source.r * k, g = source.g * k, b = source.b * k;
+  Object.assign(accentTarget, { r, g, b });
+  document.documentElement.style.setProperty('--accent', `rgb(${r | 0} ${g | 0} ${b | 0})`);
+}
+
+function accentFromText(text) {
+  let hash = 7;
+  for (const c of text) hash = (hash * 31 + c.codePointAt(0)) >>> 0;
+  return hslToRgb(hash % 360, .95, .6);
+}
+
+/* Most vivid colour on the cover, pushed bright enough to read on black. */
+function accentFromImage(bitmap) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 24;
+  const x = c.getContext('2d', { willReadFrequently: true });
+  x.drawImage(bitmap, 0, 0, 24, 24);
+  const px = x.getImageData(0, 0, 24, 24).data;
+  let best = null, bestScore = -1;
+  for (let i = 0; i < px.length; i += 4) {
+    const max = Math.max(px[i], px[i + 1], px[i + 2]);
+    const min = Math.min(px[i], px[i + 1], px[i + 2]);
+    const score = (max - min) * (max / 255);
+    if (score > bestScore) { bestScore = score; best = [px[i], px[i + 1], px[i + 2]]; }
+  }
+  const [r, g, b] = best;
+  const max = Math.max(r, g, b), d = max - Math.min(r, g, b);
+  if (d < 24) return { r: 244, g: 242, b: 238 };
+  const h = max === r ? ((g - b) / d + 6) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return hslToRgb(h * 60, .9, .62);
+}
+
+let toastTimer;
+function toast(text) {
+  $('toast').textContent = text;
+  $('toast').classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => $('toast').classList.remove('show'), 3500);
+}
+
+/* ---------- controls ---------- */
+
+function showShuffle(on) {
+  $('b-shuffle').classList.toggle('on', on);
+  $('b-shuffle').setAttribute('aria-pressed', on);
+}
+
+function setShuffle(on) {
+  const playing = state.order[state.pos];
+  state.shuffle = on;
+  store.set('shuffle', on);
+  if (state.crate) { state.crate.shuffle = on; memoryDirty = true; }
+  showShuffle(on);
+  if (state.tracks.length) buildOrder(playing);
+}
+
+function cycleRepeat() {
+  const modes = ['all', 'one', 'off'];
+  setRepeat(modes[(modes.indexOf(state.repeat) + 1) % 3]);
+}
+function setRepeat(mode) {
+  state.repeat = mode;
+  store.set('repeat', mode);
+  $('repeat-label').textContent = mode;
+  $('b-repeat').classList.toggle('on', mode !== 'off');
+}
+
+/* The song's own volume, scaled by a separate level that only applies in game mode. */
+function applyVolume() {
+  audio.volume = Math.max(0, Math.min(1, state.volume * (gameActive() ? memory.gameScale : 1)));
+  $('vol-label').textContent = audio.muted ? 0 : Math.round(audio.volume * 100);
+  $('b-mute').classList.toggle('on', audio.muted || audio.volume === 0);
+}
+function setVolume(v) {
+  state.volume = Math.max(0, Math.min(1, Math.round(v * 100) / 100));
+  store.set('volume', state.volume);
+  applyVolume();
+}
+function applySongVolume(t) {
+  const r = peek(t);
+  state.volume = r && r.vol !== undefined ? r.vol : store.get('volume', .8);
+  applyVolume();
+}
+const toggleMute = () => { audio.muted = !audio.muted; applyVolume(); showVolume(); };
+function nudgeVolume(delta) {
+  audio.muted = false;
+  if (gameActive()) {
+    memory.gameScale = Math.max(0, Math.min(1, (audio.volume + delta) / Math.max(state.volume, .01)));
+    memoryDirty = true;
+    applyVolume();
+  } else {
+    setVolume(state.volume + delta);
+    if (current()) record(current()).vol = state.volume;
+  }
+  showVolume();
+}
+function showVolume() { if (isMini()) toast('vol ' + Math.round(audio.volume * 100)); }
+
+function seekBy(seconds) {
+  if (isFinite(audio.duration)) audio.currentTime = Math.max(0, Math.min(audio.duration - .1, audio.currentTime + seconds));
+}
+
+$('b-open').addEventListener('click', openFolder);
+$('b-prev').addEventListener('click', previous);
+$('b-play').addEventListener('click', togglePlay);
+$('b-next').addEventListener('click', skipNext);
+$('b-shuffle').addEventListener('click', () => setShuffle(!state.shuffle));
+$('b-repeat').addEventListener('click', cycleRepeat);
+$('b-mute').addEventListener('click', toggleMute);
+$('b-queue').addEventListener('click', () => toggleQueue());
+$('b-mini').addEventListener('click', () => setWindowMode('mini'));
+$('m-prev').addEventListener('click', previous);
+$('m-play').addEventListener('click', togglePlay);
+$('m-next').addEventListener('click', skipNext);
+$('b-more').addEventListener('click', openHelp);
+$('b-style').addEventListener('click', () => toggleStyle());
+$('stage').addEventListener('contextmenu', e => { e.preventDefault(); toggleStyle(true); });
+$('sticker-picker').addEventListener('change', e => {
+  if (e.target.files[0]) setSticker(e.target.files[0], 'song');
+  e.target.value = '';
+});
+$('w-close').addEventListener('click', () => native.close());
+$('w-min').addEventListener('click', () => native.minimize());
+$('w-mode').addEventListener('click', () => setWindowMode(isMini() ? 'full' : 'mini'));
+
+/* Mouse clicks drop focus so the next space press means play/pause, not "click that again". */
+addEventListener('click', e => {
+  if (e.detail > 0 && e.target.closest('button') && document.activeElement.tagName !== 'INPUT') document.activeElement.blur();
+});
+
+addEventListener('keydown', e => {
+  if (e.key === 'Escape' && document.body.classList.contains('styling') && e.target !== $('filter')) {
+    e.preventDefault();
+    return toggleStyle(false);
+  }
+  if (e.ctrlKey || e.metaKey || e.altKey || ['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) return;
+  if (state.sheet) {
+    if (e.key === 'Escape') { e.preventDefault(); return closeSheet(); }
+    if (state.sheet === 'crates' && /^[1-9]$/.test(e.key) && memory.crates[e.key - 1]) return switchCrate(memory.crates[e.key - 1]);
+  }
+  const onButton = e.target.closest && e.target.closest('button');
+  if (onButton && (e.key === ' ' || e.key === 'Enter')) return;
+  const actions = {
+    ' ': togglePlay,
+    Enter: () => { if (!state.tracks.length) togglePlay(); },
+    n: skipNext,
+    b: toggleMark,
+    '[': () => jumpMark(-1),
+    ']': () => jumpMark(1),
+    i: () => $('sticker-picker').click(),
+    x: removeSticker,
+    g: toggleGame,
+    c: openCrates,
+    y: openReview,
+    '?': openHelp,
+    t: () => toggleStyle(),
+    T: resetTheme,
+    ',': () => { if (native) native.openConfig(); },
+    p: previous,
+    s: () => setShuffle(!state.shuffle),
+    r: cycleRepeat,
+    m: toggleMute,
+    o: openFolder,
+    q: () => toggleQueue(),
+    e: () => setWindowMode(isMini() ? 'full' : 'mini'),
+    f: () => {
+      if (isMini()) return;
+      document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
+    },
+    '/': () => { toggleQueue(true); $('filter').focus(); },
+    Escape: () => toggleQueue(false),
+    ArrowLeft: () => seekBy(-5),
+    ArrowRight: () => seekBy(5),
+    ArrowUp: () => nudgeVolume(.05),
+    ArrowDown: () => nudgeVolume(-.05),
+  };
+  const action = actions[e.key];
+  if (action) { e.preventDefault(); action(); }
+});
+
+addEventListener('wheel', e => {
+  if (!e.target.closest('#queue')) nudgeVolume(-Math.sign(e.deltaY) * .03);
+}, { passive: true });
+
+addEventListener('resize', () => { resize(); fitTitle(); });
+
+if ('mediaSession' in navigator) {
+  const session = navigator.mediaSession;
+  session.setActionHandler('play', () => audio.play());
+  session.setActionHandler('pause', () => audio.pause());
+  session.setActionHandler('previoustrack', previous);
+  session.setActionHandler('nexttrack', skipNext);
+  session.setActionHandler('seekbackward', () => seekBy(-10));
+  session.setActionHandler('seekforward', () => seekBy(10));
+  session.setActionHandler('seekto', d => { audio.currentTime = d.seekTime; });
+}
+
+/* ---------- audio graph ---------- */
+
+let analyser = null, freq = null, actx = null;
+
+function initAudioGraph() {
+  if (actx) { if (actx.state === 'suspended') actx.resume(); return; }
+  actx = new AudioContext();
+  analyser = actx.createAnalyser();
+  analyser.fftSize = 2048;
+  analyser.smoothingTimeConstant = .72;
+  freq = new Uint8Array(analyser.frequencyBinCount);
+  actx.createMediaElementSource(audio).connect(analyser);
+  analyser.connect(actx.destination);
+}
+
+/* ---------- the ring: bars are the spectrum, their colour is the seek position ---------- */
+
+const canvas = $('stage');
+const ctx = canvas.getContext('2d');
+const BARS = 168;
+const bars = new Float32Array(BARS);
+const binFor = Array.from({ length: BARS }, (_, i) => {
+  const m = 1 - Math.abs(i / BARS * 2 - 1);
+  return Math.floor(Math.exp(m * Math.log(700))) + 1;
+});
+const geo = { w: 0, h: 0, cx: 0, cy: 0, disc: 0, ring: 0, reach: 0 };
+let angle = 0, bass = 0, hover = null, lastFrame = 0;
+let scratch = null;
+
+function resize() {
+  const dpr = Math.min(devicePixelRatio || 1, 2);
+  geo.w = innerWidth;
+  geo.h = innerHeight;
+  canvas.width = geo.w * dpr;
+  canvas.height = geo.h * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  if (document.body.classList.contains('compact')) {
+    Object.assign(geo, { cx: geo.w / 2, cy: geo.h / 2, disc: 28, ring: 31, reach: 10 });
+    return;
+  }
+  if (isMini()) {
+    Object.assign(geo, { cx: 60, cy: 75, disc: 34, ring: 37, reach: 10 });
+    return;
+  }
+  const panel = document.body.classList.contains('styling') && geo.w > 760 ? 380 : 0;
+  geo.cx = (geo.w - panel) / 2;
+  geo.cy = geo.h * .4;
+  const base = Math.min((geo.w - panel) * .36, geo.h * .24) * theme.size;
+  geo.disc = base * .82;
+  geo.ring = base * .92;
+  geo.reach = base * .46;
+}
+
+function drawDisc(rgb) {
+  paintDisc(ctx, geo.cx, geo.cy, geo.disc * (1 + bass * .035), angle, discOptions(rgb));
+}
+
+function frame(now) {
+  requestAnimationFrame(frame);
+  const dt = Math.min((now - lastFrame) / 1000, .1);
+  lastFrame = now;
+
+  for (const k of ['r', 'g', 'b']) accent[k] += (accentTarget[k] - accent[k]) * .06;
+  const rgb = `rgb(${accent.r | 0},${accent.g | 0},${accent.b | 0})`;
+
+  const live = analyser && !audio.paused;
+  if (live) analyser.getByteFrequencyData(freq);
+
+  let low = 0;
+  for (let i = 0; i < BARS; i++) {
+    const m = 1 - Math.abs(i / BARS * 2 - 1);
+    let target;
+    if (live) {
+      target = Math.pow(freq[binFor[i]] / 255, 2.1) * (1 + m * .9);
+    } else if (!state.tracks.length && !reduceMotion) {
+      target = .1 + .08 * Math.sin(now / 700 + i * .3) * Math.sin(now / 1900 + i * .075);
+    } else {
+      target = 0;
+    }
+    bars[i] += (target - bars[i]) * (target > bars[i] ? .55 : .14);
+    if (m < .08) low += bars[i];
+  }
+  low /= Math.max(1, BARS * .08);
+  bass += (Math.min(low, 1) - bass) * .25;
+
+  if (!audio.paused && !reduceMotion) angle += dt * Math.PI * 2 * (33.3 / 60) * .35 * theme.spin;
+
+  if (scratch && scratch.coasting) {
+    rotateDisc(scratch.vel * dt);
+    scratch.vel *= Math.exp(-dt * 2.2);
+    if (Math.abs(scratch.vel) < .6) commitScratch();
+  }
+  if (audio.playbackRate < 1) {
+    audio.playbackRate = Math.min(1, audio.playbackRate + dt * 1.4);
+    if (audio.playbackRate === 1) audio.preservesPitch = true;
+  }
+
+  themeImages.disc = currentFrame(themeMedia.disc, now);
+  themeImages.bg = currentFrame(themeMedia.bg, now);
+  ctx.fillStyle = theme.bg;
+  ctx.fillRect(0, 0, geo.w, geo.h);
+  if (themeImages.bg) {
+    const { width: iw, height: ih } = themeImages.bg;
+    const k = Math.max(geo.w / iw, geo.h / ih);
+    ctx.drawImage(themeImages.bg, (geo.w - iw * k) / 2, (geo.h - ih * k) / 2, iw * k, ih * k);
+    ctx.globalAlpha = theme.bgDim;
+    ctx.fillRect(0, 0, geo.w, geo.h);
+    ctx.globalAlpha = 1;
+  }
+
+  if (theme.glow > 0) {
+    const glowR = Math.max(geo.w, geo.h) * (.45 + bass * .12);
+    const glow = ctx.createRadialGradient(geo.cx, geo.cy, geo.disc * .5, geo.cx, geo.cy, glowR);
+    glow.addColorStop(0, `rgba(${accent.r | 0},${accent.g | 0},${accent.b | 0},${Math.min(1, (.1 + bass * .24) * theme.glow)})`);
+    glow.addColorStop(1, `rgba(${accent.r | 0},${accent.g | 0},${accent.b | 0},0)`);
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, geo.w, geo.h);
+  }
+
+  const duration = isFinite(audio.duration) ? audio.duration : 0;
+  const time = state.scrub === null ? audio.currentTime : state.scrub;
+  const progress = duration ? time / duration : 0;
+  drawRing(rgb, progress, duration);
+
+  if (hover !== null && duration) {
+    const a = -Math.PI / 2 + hover * Math.PI * 2;
+    ctx.fillStyle = theme.fg;
+    ctx.beginPath();
+    ctx.arc(geo.cx + Math.cos(a) * (geo.ring - 7), geo.cy + Math.sin(a) * (geo.ring - 7), 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  drawDisc(rgb);
+  if (document.body.classList.contains('styling') && now - lastThumbs > 120) {
+    lastThumbs = now;
+    drawThumbs(true);
+  }
+
+  const t = current();
+  const marks = t && duration && peek(t) ? peek(t).marks : [];
+  ctx.fillStyle = theme.fg;
+  for (const mark of marks) {
+    const a = -Math.PI / 2 + mark / duration * Math.PI * 2;
+    ctx.beginPath();
+    ctx.arc(geo.cx + Math.cos(a) * (geo.ring - 1), geo.cy + Math.sin(a) * (geo.ring - 1), geo.disc > 50 ? 3.5 : 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function ringHit(e) {
+  const dx = e.clientX - geo.cx, dy = e.clientY - geo.cy;
+  const dist = Math.hypot(dx, dy);
+  const fraction = ((Math.atan2(dy, dx) + Math.PI / 2) / (Math.PI * 2) + 1) % 1;
+  if (dist <= geo.disc) return { zone: 'disc' };
+  if (dist <= geo.ring + geo.reach + 8) return { zone: 'ring', fraction };
+  return { zone: null };
+}
+
+/* Spinning the disc: clockwise goes forward, one full turn is an eighth of the song (at least 20s). */
+const pointerAngle = e => Math.atan2(e.clientY - geo.cy, e.clientX - geo.cx);
+
+function rotateDisc(delta) {
+  angle += delta;
+  if (state.scrub === null) return;
+  const end = Math.max(0, audio.duration - .25);
+  const seconds = delta / (Math.PI * 2) * Math.max(20, audio.duration / 8);
+  state.scrub = Math.max(0, Math.min(end, state.scrub + seconds));
+  updateTime();
+  if (scratch.coasting && (state.scrub === 0 || state.scrub === end)) scratch.vel = 0;
+}
+
+function grabDisc(e) {
+  canvas.setPointerCapture(e.pointerId);
+  const coasting = scratch && scratch.coasting;
+  scratch = {
+    a: pointerAngle(e), x: e.clientX, y: e.clientY, t: performance.now(), vel: 0,
+    moved: !!coasting, coasting: false,
+    resume: coasting ? scratch.resume : !audio.paused,
+  };
+}
+
+function moveDisc(e) {
+  if (!scratch.moved) {
+    if (Math.hypot(e.clientX - scratch.x, e.clientY - scratch.y) < 3) return;
+    scratch.moved = true;
+    if (state.tracks.length && isFinite(audio.duration)) state.scrub = audio.currentTime;
+    audio.pause();
+  }
+  if (Math.hypot(e.clientX - geo.cx, e.clientY - geo.cy) < 6) return;
+  const a = pointerAngle(e);
+  const delta = Math.atan2(Math.sin(a - scratch.a), Math.cos(a - scratch.a));
+  const now = performance.now();
+  const dt = Math.max(1, now - scratch.t) / 1000;
+  scratch.vel = scratch.vel * .6 + delta / dt * .4;
+  scratch.a = a;
+  scratch.t = now;
+  rotateDisc(delta);
+}
+
+function releaseDisc() {
+  if (!scratch.moved) {
+    scratch = null;
+    return togglePlay();
+  }
+  const flicked = performance.now() - scratch.t < 80 && Math.abs(scratch.vel) > 2.5;
+  if (flicked && !reduceMotion && state.scrub !== null) {
+    scratch.vel = Math.max(-30, Math.min(30, scratch.vel));
+    scratch.coasting = true;
+  } else {
+    commitScratch();
+  }
+}
+
+/* Letting go lands the needle: the audio spins back up to speed like a real platter. */
+function commitScratch() {
+  const { resume, coasting } = scratch;
+  scratch = null;
+  if (state.scrub === null) return;
+  audio.currentTime = snapToMark(state.scrub, coasting ? Math.max(8, audio.duration * .04) : 1.5);
+  state.scrub = null;
+  updateTime();
+  updatePlayLabel();
+  if (resume) {
+    if (!reduceMotion) {
+      audio.preservesPitch = false;
+      audio.playbackRate = .55;
+    }
+    audio.play().catch(() => {});
+  }
+}
+
+canvas.addEventListener('pointerdown', e => {
+  if ($('queue').classList.contains('open')) return toggleQueue(false);
+  const hit = ringHit(e);
+  if (hit.zone === 'disc') grabDisc(e);
+  else if (hit.zone === 'ring' && isFinite(audio.duration)) {
+    canvas.setPointerCapture(e.pointerId);
+    state.scrub = hit.fraction * audio.duration;
+    updateTime();
+  }
+});
+canvas.addEventListener('pointermove', e => {
+  if (scratch && !scratch.coasting) {
+    canvas.style.cursor = 'grabbing';
+    return moveDisc(e);
+  }
+  const hit = ringHit(e);
+  canvas.style.cursor = hit.zone === 'disc' ? 'grab' : hit.zone ? 'pointer' : 'default';
+  hover = hit.zone === 'ring' ? hit.fraction : null;
+  if (state.scrub !== null) {
+    const dx = e.clientX - geo.cx, dy = e.clientY - geo.cy;
+    hover = ((Math.atan2(dy, dx) + Math.PI / 2) / (Math.PI * 2) + 1) % 1;
+    state.scrub = hover * audio.duration;
+    updateTime();
+  }
+});
+canvas.addEventListener('pointerup', () => {
+  if (scratch && !scratch.coasting) {
+    canvas.style.cursor = 'grab';
+    return releaseDisc();
+  }
+  if (state.scrub !== null && !scratch) {
+    audio.currentTime = state.scrub;
+    state.scrub = null;
+    updateTime();
+  }
+});
+canvas.addEventListener('pointercancel', () => {
+  if (scratch) return commitScratch();
+  state.scrub = null;
+  updateTime();
+});
+canvas.addEventListener('pointerleave', () => { hover = null; });
+
+const track = $('mini-track');
+function trackSeek(e) {
+  const box = track.getBoundingClientRect();
+  state.scrub = Math.max(0, Math.min(1, (e.clientX - box.left) / box.width)) * audio.duration;
+  updateTime();
+}
+track.addEventListener('pointerdown', e => {
+  if (!isFinite(audio.duration)) return;
+  track.setPointerCapture(e.pointerId);
+  trackSeek(e);
+});
+track.addEventListener('pointermove', e => { if (track.hasPointerCapture(e.pointerId)) trackSeek(e); });
+track.addEventListener('pointerup', e => {
+  if (!track.hasPointerCapture(e.pointerId)) return;
+  audio.currentTime = state.scrub;
+  state.scrub = null;
+  updateTime();
+});
+
+/* ---------- boot ---------- */
+
+if (native) {
+  document.body.classList.add('native');
+  document.body.classList.toggle('mini', new URLSearchParams(location.search).get('mode') === 'mini');
+}
+setRepeat(state.repeat);
+setShuffle(state.shuffle);
+resize();
+fitTitle();
+requestAnimationFrame(frame);
+
+/* ---------- record styles: each paints around the origin at radius r ---------- */
+
+const TAU = Math.PI * 2;
+const seeded = s => () => (s = (s * 1664525 + 1013904223) >>> 0) / 2 ** 32;
+function dot(c, r, x = 0, y = 0) {
+  c.beginPath();
+  c.arc(x, y, r, 0, TAU);
+}
+function grooves(c, r, o) {
+  c.lineWidth = 1;
+  const ink = isLight(o.discColor) ? '#000000' : '#ffffff';
+  c.strokeStyle = fgAlpha(.05 + o.wear * .12, ink);
+  for (let g = r * .42; g < r; g += Math.max(2.5, r / 30)) {
+    dot(c, g);
+    c.stroke();
+  }
+}
+function scuffs(c, r, o) {
+  if (!o.scuffs.length) return;
+  c.strokeStyle = 'rgba(255,255,255,.3)';
+  c.lineWidth = 1;
+  for (const s of o.scuffs) {
+    c.beginPath();
+    c.arc(0, 0, r * s.at, s.from, s.from + s.len);
+    c.stroke();
+  }
+}
+function label(c, r, o) {
+  c.fillStyle = o.label;
+  dot(c, r * .36);
+  c.fill();
+  c.fillStyle = o.bg;
+  dot(c, r * .035, r * .22);
+  c.fill();
+}
+function star(c, r, inner, points) {
+  c.beginPath();
+  for (let i = 0; i < points * 2; i++) {
+    const a = i / (points * 2) * TAU - Math.PI / 2;
+    const d = i % 2 ? inner : r;
+    c.lineTo(Math.cos(a) * d, Math.sin(a) * d);
+  }
+  c.closePath();
+}
+function shapePath(c, shape, r) {
+  c.beginPath();
+  if (shape === 'circle') c.arc(0, 0, r, 0, TAU);
+  else if (shape === 'square') c.rect(-r * .9, -r * .9, r * 1.8, r * 1.8);
+  else if (shape === 'rounded') c.roundRect(-r * .92, -r * .92, r * 1.84, r * 1.84, r * .28);
+  else if (shape === 'hex') star(c, r, r, 3);
+  else if (shape === 'star') star(c, r, r * .48, 5);
+  else if (shape === 'heart') {
+    c.moveTo(0, r * .9);
+    c.bezierCurveTo(-r * 1.3, r * .05, -r * .8, -r * 1.05, 0, -r * .4);
+    c.bezierCurveTo(r * .8, -r * 1.05, r * 1.3, r * .05, 0, r * .9);
+    c.closePath();
+  }
+}
+
+/* round: a real disc, so cover art can fill it and it can show wear. */
+const DISC_STYLES = {
+  vinyl: { name: 'vinyl', round: true, sheen: true, hole: true, label: true, paint(c, r, o) {
+    c.fillStyle = o.discColor; dot(c, r); c.fill();
+    grooves(c, r, o); scuffs(c, r, o); label(c, r, o);
+  } },
+  gold: { name: 'gold', round: true, sheen: true, hole: true, label: true, paint(c, r, o) {
+    const g = c.createRadialGradient(-r * .3, -r * .3, r * .1, 0, 0, r);
+    g.addColorStop(0, '#fff3b0'); g.addColorStop(.55, '#d9a521'); g.addColorStop(1, '#8a6508');
+    c.fillStyle = g; dot(c, r); c.fill();
+    c.lineWidth = 1; c.strokeStyle = 'rgba(70,45,0,.2)';
+    for (let d = r * .42; d < r; d += Math.max(2.5, r / 30)) { dot(c, d); c.stroke(); }
+    scuffs(c, r, o); label(c, r, o);
+  } },
+  clear: { name: 'clear', round: true, sheen: true, hole: true, label: true, paint(c, r, o) {
+    c.globalAlpha = .35; c.fillStyle = o.label; dot(c, r); c.fill(); c.globalAlpha = 1;
+    grooves(c, r, { ...o, discColor: o.bg }); scuffs(c, r, o); label(c, r, o);
+  } },
+  splatter: { name: 'splatter', round: true, sheen: true, hole: true, label: true, paint(c, r, o) {
+    c.fillStyle = o.discColor; dot(c, r); c.fill();
+    const rnd = seeded(91);
+    for (let i = 0; i < 46; i++) {
+      const a = rnd() * TAU, d = Math.sqrt(rnd()) * r * .97;
+      c.fillStyle = i % 3 ? o.label : o.fg;
+      dot(c, r * (.012 + rnd() * rnd() * .1), Math.cos(a) * d, Math.sin(a) * d);
+      c.fill();
+    }
+    grooves(c, r, o); scuffs(c, r, o); label(c, r, o);
+  } },
+  solid: { name: 'solid', round: true, hole: true, label: true, paint(c, r, o) {
+    c.fillStyle = o.discColor; dot(c, r); c.fill();
+    scuffs(c, r, o); label(c, r, o);
+  } },
+  cd: { name: 'cd', round: true, sheen: true, hole: true, label: false, paint(c, r, o) {
+    const g = c.createConicGradient(0, 0, 0);
+    ['#d7dde3', '#ff9ad5', '#9fd8ff', '#b9ffc9', '#fff0a3', '#d7dde3', '#c9a7ff', '#8ff4ff', '#ffd1a1', '#d7dde3'].forEach((col, i, all) => g.addColorStop(i / (all.length - 1), col));
+    c.fillStyle = g; dot(c, r); c.fill();
+    scuffs(c, r, o);
+    c.fillStyle = 'rgba(255,255,255,.5)'; dot(c, r * .3); c.fill();
+    c.fillStyle = o.bg; dot(c, r * .16); c.fill();
+  } },
+  cassette: { name: 'tape', spin: false, label: false, paint(c, r, o) {
+    const w = r * 1.96, h = r * 1.3;
+    c.fillStyle = o.discColor;
+    c.beginPath(); c.roundRect(-w / 2, -h / 2, w, h, r * .1); c.fill();
+    c.fillStyle = o.label;
+    c.beginPath(); c.roundRect(-w * .42, -h * .42, w * .84, h * .62, r * .05); c.fill();
+    c.fillStyle = o.bg;
+    c.beginPath(); c.roundRect(-w * .3, -h * .2, w * .6, h * .3, r * .1); c.fill();
+    for (const x of [-r * .39, r * .39]) {
+      c.save();
+      c.translate(x, -h * .05);
+      c.rotate(o.angle);
+      c.fillStyle = o.fg; dot(c, r * .14); c.fill();
+      c.strokeStyle = o.bg; c.lineWidth = Math.max(1, r * .03);
+      for (let i = 0; i < 3; i++) {
+        c.rotate(TAU / 3);
+        c.beginPath(); c.moveTo(0, 0); c.lineTo(r * .13, 0); c.stroke();
+      }
+      c.restore();
+    }
+  } },
+  neon: { name: 'neon', label: false, paint(c, r, o) {
+    c.shadowColor = o.label; c.shadowBlur = r * .22;
+    c.strokeStyle = o.label; c.lineWidth = Math.max(1.5, r * .035);
+    for (const d of [.96, .62, .28]) { dot(c, r * d); c.stroke(); }
+    c.beginPath();
+    for (let i = 0; i < 3; i++) {
+      const a = i / 3 * TAU;
+      c.moveTo(Math.cos(a) * r * .28, Math.sin(a) * r * .28);
+      c.lineTo(Math.cos(a) * r * .62, Math.sin(a) * r * .62);
+    }
+    c.stroke();
+    c.shadowBlur = 0;
+  } },
+  wire: { name: 'wire', label: false, paint(c, r, o) {
+    c.strokeStyle = o.label; c.lineWidth = 1;
+    for (const d of [1, .75, .5, .25]) { dot(c, r * d - .5); c.stroke(); }
+    c.beginPath();
+    for (let i = 0; i < 16; i++) {
+      const a = i / 16 * TAU;
+      c.moveTo(Math.cos(a) * r * .25, Math.sin(a) * r * .25);
+      c.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+    }
+    c.stroke();
+  } },
+  vortex: { name: 'vortex', hole: true, label: false, paint(c, r, o) {
+    c.fillStyle = o.discColor; dot(c, r); c.fill();
+    c.strokeStyle = o.label; c.lineWidth = Math.max(1.5, r * .05); c.lineCap = 'round';
+    for (let arm = 0; arm < 4; arm++) {
+      c.beginPath();
+      for (let t = 0; t <= 1; t += .03) {
+        const a = arm / 4 * TAU + t * Math.PI * 1.6;
+        c.lineTo(Math.cos(a) * t * r * .95, Math.sin(a) * t * r * .95);
+      }
+      c.stroke();
+    }
+  } },
+  radar: { name: 'radar', label: false, paint(c, r, o) {
+    c.fillStyle = o.discColor; dot(c, r); c.fill();
+    const g = c.createConicGradient(0, 0, 0);
+    g.addColorStop(0, o.label); g.addColorStop(.28, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+    c.fillStyle = g; dot(c, r); c.fill();
+    c.strokeStyle = o.label; c.lineWidth = 1;
+    for (const d of [.95, .65, .35]) { dot(c, r * d); c.stroke(); }
+    c.beginPath(); c.moveTo(0, 0); c.lineTo(r * .98, 0); c.stroke();
+  } },
+  shuriken: { name: 'shuriken', hole: true, label: false, paint(c, r, o) {
+    c.fillStyle = o.label; star(c, r, r * .26, 4); c.fill();
+    c.fillStyle = o.discColor; dot(c, r * .16); c.fill();
+  } },
+  gear: { name: 'gear', hole: true, label: false, paint(c, r, o) {
+    c.fillStyle = o.label; c.beginPath();
+    const teeth = 10;
+    for (let i = 0; i < teeth; i++) {
+      for (const [f, d] of [[0, .78], [.14, 1], [.36, 1], [.5, .78]]) {
+        const a = (i + f) / teeth * TAU;
+        c.lineTo(Math.cos(a) * r * d, Math.sin(a) * r * d);
+      }
+    }
+    c.closePath(); c.fill();
+    c.fillStyle = o.discColor; dot(c, r * .42); c.fill();
+  } },
+  sun: { name: 'sun', label: false, paint(c, r, o) {
+    c.fillStyle = o.label; star(c, r, r * .66, 14); c.fill();
+    c.fillStyle = o.fg; dot(c, r * .46); c.fill();
+  } },
+  planet: { name: 'planet', label: false, paint(c, r, o) {
+    const ring = front => {
+      c.strokeStyle = o.fg; c.lineWidth = Math.max(1.5, r * .06);
+      c.beginPath();
+      c.ellipse(0, 0, r * .96, r * .28, -.4, front ? 0 : Math.PI, front ? Math.PI : TAU);
+      c.stroke();
+    };
+    ring(false);
+    const g = c.createRadialGradient(-r * .22, -r * .22, r * .05, 0, 0, r * .62);
+    g.addColorStop(0, o.label); g.addColorStop(1, o.discColor);
+    c.fillStyle = g; dot(c, r * .6); c.fill();
+    ring(true);
+  } },
+  flower: { name: 'flower', label: false, paint(c, r, o) {
+    c.fillStyle = o.label;
+    for (let i = 0; i < 8; i++) {
+      c.rotate(TAU / 8);
+      c.beginPath(); c.ellipse(r * .6, 0, r * .4, r * .2, 0, 0, TAU); c.fill();
+    }
+    c.fillStyle = o.fg; dot(c, r * .24); c.fill();
+  } },
+  pixel: { name: 'pixel', hole: true, label: false, paint(c, r, o) {
+    const n = 11, size = r * 2 / n, rnd = seeded(23);
+    for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+      const px = -r + x * size, py = -r + y * size, pick = rnd();
+      if (Math.hypot(px + size / 2, py + size / 2) > r) continue;
+      c.fillStyle = pick < .45 ? o.label : pick < .8 ? o.discColor : o.fg;
+      c.fillRect(px, py, size + .5, size + .5);
+    }
+  } },
+  emoji: { name: 'emoji / text', label: false, paint(c, r, o) {
+    const text = [...(o.text || '🎧')].slice(0, 12).join('');
+    c.fillStyle = o.fg; c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.font = `${r * 1.5}px ${o.font}`;
+    const fit = Math.min(1, r * 1.9 / Math.max(1, c.measureText(text).width));
+    c.font = `${r * 1.5 * fit}px ${o.font}`;
+    c.fillText(text, 0, r * .06);
+  } },
+  speaker: { name: 'speaker', spin: false, label: false, paint(c, r, o) {
+    c.fillStyle = o.discColor; dot(c, r); c.fill();
+    c.strokeStyle = o.fg; c.lineWidth = Math.max(1, r * .04); dot(c, r * .93); c.stroke();
+    const g = c.createRadialGradient(0, 0, r * .1, 0, 0, r * .84);
+    g.addColorStop(0, '#000000'); g.addColorStop(1, fgAlpha(.28));
+    c.fillStyle = g; dot(c, r * .84); c.fill();
+    c.fillStyle = o.label; dot(c, r * .3 * (1 + o.bass * .35)); c.fill();
+  } },
+  platter: { name: 'platter', hole: true, label: true, paint(c, r, o) {
+    c.fillStyle = '#8e9094'; dot(c, r); c.fill();
+    c.fillStyle = '#d7d9dc';
+    for (let i = 0; i < 40; i++) {
+      const a = i / 40 * TAU;
+      dot(c, Math.max(.6, r * .018), Math.cos(a) * r * .95, Math.sin(a) * r * .95);
+      c.fill();
+    }
+    c.fillStyle = o.discColor; dot(c, r * .88); c.fill();
+    grooves(c, r * .88, o); label(c, r, o);
+  } },
+  reel: { name: 'reel', hole: true, label: false, paint(c, r, o) {
+    c.fillStyle = o.label; dot(c, r); c.fill();
+    c.fillStyle = o.discColor; dot(c, r * .8); c.fill();
+    c.fillStyle = o.bg;
+    for (let i = 0; i < 3; i++) {
+      const a = i / 3 * TAU;
+      dot(c, r * .2, Math.cos(a) * r * .45, Math.sin(a) * r * .45);
+      c.fill();
+    }
+    c.fillStyle = o.fg; dot(c, r * .13); c.fill();
+  } },
+  minidisc: { name: 'mini', spin: false, label: false, paint(c, r, o) {
+    const s = r * 1.7;
+    c.fillStyle = o.discColor;
+    c.beginPath(); c.roundRect(-s / 2, -s / 2, s, s, r * .1); c.fill();
+    c.save();
+    c.beginPath(); c.roundRect(-s * .4, -s * .4, s * .8, s * .55, r * .05); c.clip();
+    c.rotate(o.angle);
+    c.fillStyle = o.label; dot(c, s * .42); c.fill();
+    c.fillStyle = o.bg; dot(c, s * .1); c.fill();
+    c.fillRect(s * .16, -1, s * .24, 2);
+    c.restore();
+    c.fillStyle = o.fg; c.fillRect(-s * .4, s * .24, s * .8, s * .1);
+  } },
+  wheel: { name: 'wheel', spin: false, label: false, paint(c, r, o) {
+    c.fillStyle = o.fg; dot(c, r); c.fill();
+    c.fillStyle = o.bg; dot(c, r * .36); c.fill();
+    c.fillStyle = o.label; dot(c, r * .07, Math.cos(o.angle) * r * .68, Math.sin(o.angle) * r * .68); c.fill();
+  } },
+  shellac: { name: 'shellac', round: true, sheen: true, hole: true, label: true, paint(c, r, o) {
+    const g = c.createRadialGradient(0, 0, r * .2, 0, 0, r);
+    g.addColorStop(0, '#3b2414'); g.addColorStop(1, '#170d07');
+    c.fillStyle = g; dot(c, r); c.fill();
+    grooves(c, r, { ...o, discColor: '#170d07' }); scuffs(c, r, o); label(c, r, o);
+  } },
+  eq: { name: 'spectrum', animated: true, spin: false, label: false, paint(c, r, o) {
+    c.fillStyle = o.discColor; dot(c, r); c.fill(); c.clip();
+    const n = 11, w = r * 2 / n;
+    for (let i = 0; i < n; i++) {
+      const v = o.bars ? Math.min(1, o.bars[Math.floor(i / n * 84)] * 1.3) : 0;
+      const level = Math.max(.08, v || (.3 + .25 * Math.sin(o.time * 2 + i)));
+      const cells = Math.round(level * 10);
+      for (let k = 0; k < cells; k++) {
+        c.fillStyle = k > 7 ? o.fg : o.label;
+        c.fillRect(-r + i * w + 1, r - (k + 1) * r * .2 + 1, w - 2, r * .2 - 2);
+      }
+    }
+  } },
+  plasma: { name: 'plasma', animated: true, spin: false, label: false, paint(c, r, o) {
+    c.fillStyle = o.discColor; dot(c, r); c.fill(); c.clip();
+    c.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 6; i++) {
+      const x = Math.sin(o.time * (.5 + i * .13) + i * 2) * r * .75, y = Math.cos(o.time * (.7 - i * .07) + i) * r * .75;
+      const g = c.createRadialGradient(x, y, 0, x, y, r * (.7 + o.bass * .4));
+      g.addColorStop(0, `hsla(${(o.time * 30 + i * 60) % 360},95%,60%,.75)`);
+      g.addColorStop(1, 'hsla(0,0%,0%,0)');
+      c.fillStyle = g;
+      c.fillRect(-r, -r, r * 2, r * 2);
+    }
+  } },
+  lava: { name: 'lava', animated: true, spin: false, label: false, paint(c, r, o) {
+    c.fillStyle = o.discColor; dot(c, r); c.fill(); c.clip();
+    c.fillStyle = o.label;
+    for (let i = 0; i < 8; i++) {
+      const y = Math.sin(o.time * (.3 + i * .05) + i * 1.7) * r * .95;
+      const x = Math.sin(i * 2.4 + o.time * .1) * r * .6;
+      dot(c, r * (.16 + (i % 3) * .08) * (1 + o.bass * .25), x, y);
+      c.fill();
+    }
+    c.fillRect(-r, r * .78, r * 2, r);
+  } },
+  matrix: { name: 'rain', animated: true, spin: false, label: false, paint(c, r, o) {
+    c.fillStyle = o.discColor; dot(c, r); c.fill(); c.clip();
+    const n = 12, w = r * 2 / n;
+    c.font = `${w}px Consolas, monospace`; c.textAlign = 'center'; c.textBaseline = 'middle';
+    for (let i = 0; i < n; i++) {
+      const rnd = seeded(i * 97 + 3), speed = 3 + rnd() * 5, phase = rnd() * 40;
+      const head = Math.floor(o.time * speed + phase);
+      for (let k = 0; k < 8; k++) {
+        const row = head - k, y = ((row % 18) + 18) % 18 * w - r;
+        const code = seeded(((row * 31 + i) & 1023) + 1)();
+        c.fillStyle = k === 0 ? o.fg : o.label;
+        c.globalAlpha = 1 - k / 8;
+        c.fillText(String.fromCharCode(0x30A0 + Math.floor(code * 90)), -r + (i + .5) * w, y);
+      }
+    }
+    c.globalAlpha = 1;
+  } },
+  stars: { name: 'warp', animated: true, spin: false, label: false, paint(c, r, o) {
+    c.fillStyle = o.discColor; dot(c, r); c.fill(); c.clip();
+    c.strokeStyle = o.fg; c.lineCap = 'round';
+    const rnd = seeded(5);
+    for (let i = 0; i < 60; i++) {
+      const a = rnd() * TAU, offset = rnd(), z = (o.time * (.15 + o.bass * .3) + offset) % 1;
+      const d = z * z * r * 1.2, len = z * r * .12 + .5;
+      c.lineWidth = Math.max(.6, z * r * .025);
+      c.beginPath();
+      c.moveTo(Math.cos(a) * d, Math.sin(a) * d);
+      c.lineTo(Math.cos(a) * (d + len), Math.sin(a) * (d + len));
+      c.stroke();
+    }
+  } },
+  pulse: { name: 'pulse', animated: true, spin: false, label: false, paint(c, r, o) {
+    c.fillStyle = o.discColor; dot(c, r); c.fill(); c.clip();
+    c.strokeStyle = o.label;
+    for (let i = 0; i < 5; i++) {
+      const z = (o.time * .4 + i / 5) % 1;
+      c.globalAlpha = 1 - z;
+      c.lineWidth = Math.max(1, r * (.03 + o.bass * .08));
+      dot(c, z * r);
+      c.stroke();
+    }
+    c.globalAlpha = 1;
+    c.fillStyle = o.label; dot(c, r * (.12 + o.bass * .22)); c.fill();
+  } },
+  fire: { name: 'fire', animated: true, spin: false, label: false, paint(c, r, o) {
+    c.fillStyle = o.discColor; dot(c, r); c.fill(); c.clip();
+    [['#ff2a00', 1], ['#ff8a00', .72], ['#ffe066', .42]].forEach(([colour, scale], layer) => {
+      c.fillStyle = colour;
+      c.beginPath();
+      c.moveTo(-r, r);
+      for (let i = 0; i <= 8; i++) {
+        const x = -r + i / 8 * r * 2;
+        const top = r - r * 1.5 * scale * (.55 + .3 * Math.sin(o.time * 5 + i * 1.9 + layer) + o.bass * .4) * (1 - Math.abs(i / 4 - 1) * .55);
+        c.quadraticCurveTo(x - r * .12, top + r * .3, x, top);
+      }
+      c.lineTo(r, r);
+      c.closePath();
+      c.fill();
+    });
+  } },
+  hypno: { name: 'hypno', animated: true, spin: false, label: false, paint(c, r, o) {
+    c.fillStyle = o.fg; dot(c, r); c.fill(); c.clip();
+    c.fillStyle = o.label;
+    const arms = 6;
+    for (let arm = 0; arm < arms; arm += 2) {
+      c.beginPath();
+      for (let t = 0; t <= 1; t += .04) {
+        const a = arm / arms * TAU + t * TAU * .9 + o.time * 1.4;
+        c.lineTo(Math.cos(a) * t * r * 1.05, Math.sin(a) * t * r * 1.05);
+      }
+      for (let t = 1; t >= 0; t -= .04) {
+        const a = (arm + 1) / arms * TAU + t * TAU * .9 + o.time * 1.4;
+        c.lineTo(Math.cos(a) * t * r * 1.05, Math.sin(a) * t * r * 1.05);
+      }
+      c.closePath();
+      c.fill();
+    }
+  } },
+  scope: { name: 'scope', animated: true, spin: false, label: false, paint(c, r, o) {
+    c.fillStyle = o.discColor; dot(c, r); c.fill(); c.clip();
+    c.strokeStyle = fgAlpha(.18); c.lineWidth = 1;
+    c.beginPath(); c.moveTo(-r, 0); c.lineTo(r, 0); c.moveTo(0, -r); c.lineTo(0, r); c.stroke();
+    c.strokeStyle = o.label; c.lineWidth = Math.max(1.2, r * .03); c.lineJoin = 'round';
+    c.beginPath();
+    for (let i = 0; i <= 48; i++) {
+      const x = -r + i / 48 * r * 2;
+      const v = o.bars ? o.bars[i % 84] : 0;
+      c.lineTo(x, Math.sin(i * .55 + o.time * 7) * r * (.12 + v * .65));
+    }
+    c.stroke();
+  } },
+  glitch: { name: 'glitch', animated: true, hole: true, label: false, paint(c, r, o) {
+    const rnd = seeded(Math.floor(o.time * 10) + 1);
+    c.save();
+    c.fillStyle = o.discColor; dot(c, r); c.fill();
+    grooves(c, r, o);
+    c.fillStyle = o.label; dot(c, r * .36); c.fill();
+    c.restore();
+    for (let i = 0; i < 7; i++) {
+      const y = -r + rnd() * r * 2, height = r * (.03 + rnd() * .12), shift = (rnd() - .5) * r * .6;
+      c.fillStyle = i % 2 ? o.label : o.fg;
+      c.globalAlpha = .75;
+      c.fillRect(-r * .8 + shift, y, r * (.5 + rnd()), height);
+    }
+    c.globalAlpha = 1;
+  } },
+  mandala: { name: 'mandala', animated: true, label: false, paint(c, r, o) {
+    for (let layer = 0; layer < 4; layer++) {
+      c.save();
+      c.rotate(o.time * (layer % 2 ? -.5 : .35));
+      c.fillStyle = layer % 2 ? o.fg : o.label;
+      star(c, r * (1 - layer * .22) * (1 + o.bass * .05), r * (.72 - layer * .18), 8 + layer * 2);
+      c.fill();
+      c.restore();
+    }
+    c.fillStyle = o.bg; dot(c, r * .1); c.fill();
+  } },
+  aurora: { name: 'aurora', animated: true, spin: false, label: false, paint(c, r, o) {
+    c.fillStyle = o.discColor; dot(c, r); c.fill(); c.clip();
+    c.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 5; i++) {
+      c.strokeStyle = `hsla(${(130 + i * 34 + o.time * 12) % 360},90%,60%,.5)`;
+      c.lineWidth = r * (.14 + o.bass * .1);
+      c.beginPath();
+      for (let x = -r; x <= r; x += r / 10) {
+        c.lineTo(x, Math.sin(x / r * 3 + o.time * (.8 + i * .2) + i) * r * .4 + (i - 2) * r * .16);
+      }
+      c.stroke();
+    }
+  } },
+  image: { name: 'your image', label: false, paint(c, r, o) {
+    const img = o.image;
+    if (!img) {
+      c.setLineDash([r * .12, r * .1]);
+      c.strokeStyle = o.fg; c.lineWidth = Math.max(1, r * .03);
+      dot(c, r * .95); c.stroke();
+      c.setLineDash([]);
+      c.beginPath(); c.moveTo(-r * .25, 0); c.lineTo(r * .25, 0); c.moveTo(0, -r * .25); c.lineTo(0, r * .25); c.stroke();
+      return;
+    }
+    const whole = o.shape === 'original';
+    const k = (r * 2) / (whole ? Math.max(img.width, img.height) : Math.min(img.width, img.height));
+    c.save();
+    if (!whole) { shapePath(c, o.shape, r); c.clip(); }
+    c.drawImage(img, -img.width * k / 2, -img.height * k / 2, img.width * k, img.height * k);
+    c.restore();
+  } },
+};
+
+function paintDisc(c, x, y, r, a, o) {
+  const style = DISC_STYLES[o.style] || DISC_STYLES.vinyl;
+  const coverFill = o.cover && o.coverMode === 'fill' && style.round;
+  c.save();
+  c.translate(x, y);
+  c.save();
+  if (style.spin !== false) c.rotate(a);
+  if (coverFill) {
+    c.save();
+    dot(c, r);
+    c.clip();
+    const k = (r * 2) / Math.min(o.cover.width, o.cover.height);
+    c.drawImage(o.cover, -o.cover.width * k / 2, -o.cover.height * k / 2, o.cover.width * k, o.cover.height * k);
+    scuffs(c, r, o);
+    c.restore();
+  } else {
+    c.save();
+    style.paint(c, r, { ...o, angle: a });
+    c.restore();
+  }
+  const art = o.sticker || (o.coverMode === 'label' && o.cover);
+  if (art && (style.label || o.sticker)) {
+    const size = r * .72;
+    c.save();
+    dot(c, size / 2);
+    c.clip();
+    const k = size / Math.min(art.width, art.height);
+    c.drawImage(art, -art.width * k / 2, -art.height * k / 2, art.width * k, art.height * k);
+    c.restore();
+  }
+  c.restore();
+
+  if (style.sheen || coverFill) {
+    c.save();
+    dot(c, r);
+    c.clip();
+    const sheen = c.createConicGradient(Math.PI / 5, 0, 0);
+    for (const [stop, alpha] of [[0, 0], [.07, .14], [.14, 0], [.5, 0], [.57, .1], [.64, 0], [1, 0]]) {
+      sheen.addColorStop(stop, `rgba(255,255,255,${alpha})`);
+    }
+    c.fillStyle = sheen;
+    c.fillRect(-r, -r, r * 2, r * 2);
+    c.restore();
+  }
+  if (style.hole || coverFill) {
+    c.fillStyle = o.bg;
+    dot(c, r * .045);
+    c.fill();
+  }
+  c.restore();
+}
+
+function discOptions(rgb) {
+  return {
+    style: theme.disc,
+    discColor: theme.discColor,
+    label: theme.labelMode === 'custom' ? theme.labelColor : rgb,
+    fg: theme.fg,
+    bg: theme.bg,
+    text: theme.discText,
+    font: fontStack(theme.displayFont, '"Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", "Segoe UI", sans-serif'),
+    image: themeImages.disc,
+    shape: theme.imageShape,
+    cover: state.cover,
+    coverMode: theme.cover,
+    sticker: state.sticker && state.sticker.bitmap,
+    wear: state.wear,
+    scuffs: state.scuffs,
+    time: reduceMotion ? 0 : performance.now() / 1000,
+    bass,
+    bars,
+  };
+}
+
+/* ---------- the ring: its shape is the spectrum, its colour is the seek position ---------- */
+
+function drawRing(rgb, progress, duration) {
+  if (theme.ring === 'none') return;
+  const dim = fgAlpha(.26);
+  const lit = state.tracks.length ? rgb : dim;
+  const cut = duration ? progress : -1;
+  const point = (i, extra) => {
+    const a = -Math.PI / 2 + i / BARS * TAU;
+    return [geo.cx + Math.cos(a) * (geo.ring + extra), geo.cy + Math.sin(a) * (geo.ring + extra)];
+  };
+  const len = i => Math.min(bars[i], 1) * geo.reach;
+  const played = new Path2D(), rest = new Path2D();
+  ctx.lineJoin = 'round';
+
+  if (theme.ring === 'thin') {
+    const a0 = -Math.PI / 2, reach = Math.max(0, cut) * TAU;
+    rest.arc(geo.cx, geo.cy, geo.ring + 3, a0 + reach, a0 + TAU);
+    played.arc(geo.cx, geo.cy, geo.ring + 3, a0, a0 + reach);
+    ctx.lineCap = 'round';
+    ctx.lineWidth = 2 + bass * 3;
+    ctx.strokeStyle = dim; ctx.stroke(rest);
+    ctx.strokeStyle = lit; if (reach) ctx.stroke(played);
+    return;
+  }
+  if (theme.ring === 'line') {
+    const stop = cut < 0 ? 0 : Math.floor(cut * BARS);
+    for (let i = 0; i <= BARS; i++) {
+      const [x, y] = point(i, 3 + len(i % BARS));
+      if (i <= stop && cut >= 0) played.lineTo(x, y);
+      if (i >= stop) rest.lineTo(x, y);
+    }
+    ctx.lineCap = 'round';
+    ctx.lineWidth = geo.disc > 50 ? 2.5 : 1.5;
+    ctx.strokeStyle = dim; ctx.stroke(rest);
+    ctx.strokeStyle = lit; ctx.stroke(played);
+    return;
+  }
+  const stride = (isMini() ? 3 : 1) * (theme.ring === 'bars' ? 1 : 2);
+  const spacing = geo.ring * TAU / BARS * stride;
+  for (let i = 0; i < BARS; i += stride) {
+    const path = i / BARS <= cut ? played : rest;
+    if (theme.ring === 'dots') {
+      const [x, y] = point(i, 3 + len(i));
+      const size = Math.max(1, spacing * .3);
+      path.moveTo(x + size, y);
+      path.arc(x, y, size, 0, TAU);
+    } else {
+      path.moveTo(...point(i, 0));
+      path.lineTo(...point(i, 3 + len(i)));
+    }
+  }
+  if (theme.ring === 'dots') {
+    ctx.fillStyle = dim; ctx.fill(rest);
+    ctx.fillStyle = lit; ctx.fill(played);
+    return;
+  }
+  const blocks = theme.ring === 'blocks';
+  ctx.lineCap = blocks ? 'butt' : 'round';
+  ctx.lineWidth = blocks ? spacing * .72 : Math.max(2, geo.ring * TAU / BARS * .42);
+  ctx.strokeStyle = dim; ctx.stroke(rest);
+  ctx.strokeStyle = lit; ctx.stroke(played);
+}
+
+/* ---------- applying a theme ---------- */
+
+const FONT_EXT = /\.(ttf|otf|woff2?)$/i;
+const CURATED_FONTS = ['Bahnschrift', 'Segoe UI', 'Segoe UI Variable Display', 'Impact', 'Arial Black', 'Arial', 'Calibri', 'Cambria', 'Candara', 'Constantia', 'Corbel', 'Franklin Gothic Medium', 'Gabriola', 'Georgia', 'Ink Free', 'Palatino Linotype', 'Segoe Print', 'Segoe Script', 'Sitka Text', 'Tahoma', 'Times New Roman', 'Trebuchet MS', 'Verdana', 'Comic Sans MS', 'Cascadia Code', 'Consolas', 'Courier New', 'Lucida Console'];
+const DEFAULT_DISPLAY = 'Bahnschrift, "DIN Condensed", "Arial Narrow", "Liberation Sans Narrow", "Segoe UI", "Noto Sans", sans-serif';
+const DEFAULT_UI = '"Cascadia Code", "SF Mono", Consolas, Menlo, "DejaVu Sans Mono", "Noto Sans Mono", monospace';
+
+function applyTheme() {
+  const root = document.documentElement.style;
+  root.setProperty('--bg', theme.bg);
+  root.setProperty('--fg', theme.fg);
+  root.setProperty('--display', fontStack(theme.displayFont, DEFAULT_DISPLAY));
+  root.setProperty('--mono', fontStack(theme.uiFont, DEFAULT_UI));
+  root.setProperty('--title-weight', theme.titleWeight);
+  root.setProperty('--title-case', theme.titleCase === 'upper' ? 'uppercase' : 'none');
+  root.setProperty('--title-blend', theme.titleColor === 'invert' ? 'difference' : 'normal');
+  root.setProperty('--title-color', theme.titleColor === 'invert' ? '#fff' : theme.titleColor === 'accent' ? 'var(--accent)' : theme.fg);
+  if (native) native.setBackground(theme.bg);
+  refreshAccent();
+  resize();
+  fitTitle();
+}
+
+function setTheme(patch) {
+  theme = cleanTheme({ ...theme, ...patch });
+  store.set('theme', theme);
+  applyTheme();
+  drawThumbs();
+  const note = $('style-contrast');
+  if (note) note.hidden = contrast(theme.fg, theme.bg) >= 3;
+}
+
+function loadPreset(name) {
+  /* Your added fonts stay available whichever preset you pick. */
+  setTheme({ ...DEFAULT_THEME, ...PRESETS[name], fonts: theme.fonts });
+  renderStyle();
+}
+
+function resetTheme() {
+  loadPreset('Spin');
+  toast('style reset');
+}
+
+/* Media: stills, animated GIF / WebP / APNG, and silent looping video, all usable as record or background. */
+const themeMedia = { disc: null, bg: null };
+const MEDIA_ACCEPT = 'image/*,video/mp4,video/webm';
+const SKIN_EXT = /\.(wsz|wal|vlt|zip)$/i;
+const isMedia = f => f.type.startsWith('image/') || f.type.startsWith('video/');
+const MAX_FRAMES = 240;
+
+async function loadMedia(blob) {
+  if (blob.type.startsWith('video/')) return loadVideo(blob);
+  if (window.ImageDecoder && /^image\/(gif|webp|png|apng)$/.test(blob.type)) {
+    let decoder = null;
+    try {
+      decoder = new ImageDecoder({ data: await blob.arrayBuffer(), type: blob.type });
+      await decoder.tracks.ready;
+      const count = Math.min(decoder.tracks.selectedTrack.frameCount, MAX_FRAMES);
+      if (count > 1) {
+        const frames = [];
+        let total = 0;
+        for (let i = 0; i < count; i++) {
+          const { image } = await decoder.decode({ frameIndex: i });
+          const k = Math.min(1, 512 / Math.max(image.displayWidth, image.displayHeight));
+          const bitmap = await createImageBitmap(image, { resizeWidth: Math.round(image.displayWidth * k), resizeHeight: Math.round(image.displayHeight * k) });
+          const duration = Math.max(20, (image.duration || 100000) / 1000);
+          image.close();
+          frames.push({ bitmap, at: total });
+          total += duration;
+        }
+        return { frames, total };
+      }
+    } catch {
+    } finally {
+      if (decoder) decoder.close();
+    }
+  }
+  return { still: await createImageBitmap(blob) };
+}
+
+function loadVideo(blob) {
+  return new Promise((resolve, reject) => {
+    const video = document.createElement('video');
+    const url = URL.createObjectURL(blob);
+    video.muted = true;
+    video.loop = true;
+    video.playsInline = true;
+    video.onloadeddata = () => {
+      video.width = video.videoWidth;
+      video.height = video.videoHeight;
+      video.play().catch(() => {});
+      resolve({ video, url });
+    };
+    video.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('cannot decode video'));
+    };
+    video.src = url;
+  });
+}
+
+function disposeMedia(media) {
+  if (!media) return;
+  if (media.still) media.still.close();
+  if (media.frames) media.frames.forEach(f => f.bitmap.close());
+  if (media.video) {
+    media.video.pause();
+    URL.revokeObjectURL(media.url);
+  }
+}
+
+function currentFrame(media, now) {
+  if (!media) return null;
+  if (media.still) return media.still;
+  if (media.video) return media.video;
+  const at = reduceMotion ? 0 : now % media.total;
+  let frame = media.frames[0];
+  for (const f of media.frames) {
+    if (f.at > at) break;
+    frame = f;
+  }
+  return frame.bitmap;
+}
+
+async function setThemeImage(slot, file, remember = true) {
+  try {
+    const media = await loadMedia(file);
+    await handleDb('readwrite', s => s.put(file, 'theme:' + slot));
+    const previous = themeMedia[slot];
+    themeMedia[slot] = media;
+    themeImages[slot] = currentFrame(media, performance.now());
+    disposeMedia(previous);
+    if (remember) await addToLibrary(file, file.name || 'image');
+    if (slot === 'disc') setTheme({ disc: 'image' });
+    renderStyle();
+  } catch {
+    toast('could not read that file');
+  }
+}
+
+async function clearThemeImage(slot) {
+  await handleDb('readwrite', s => s.delete('theme:' + slot)).catch(() => {});
+  const previous = themeMedia[slot];
+  themeMedia[slot] = null;
+  themeImages[slot] = null;
+  disposeMedia(previous);
+  renderStyle();
+}
+
+/* ---------- library: everything you have added, kept so you can switch back ---------- */
+
+const libraryList = () => store.get('library', []);
+let libraryPick = null;
+const libraryThumbs = new Map();
+
+async function addToLibrary(blob, name, source = '') {
+  const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  await handleDb('readwrite', s => s.put(blob, 'lib:' + id));
+  store.set('library', [...libraryList(), { id, name: name.slice(0, 80), type: blob.type, source }]);
+  return id;
+}
+
+const libraryBlob = id => handleDb('readonly', s => s.get('lib:' + id));
+
+async function deleteFromLibrary(id) {
+  await handleDb('readwrite', s => s.delete('lib:' + id)).catch(() => {});
+  store.set('library', libraryList().filter(item => item.id !== id));
+  libraryThumbs.delete(id);
+  if (libraryPick === id) libraryPick = null;
+  renderStyle();
+}
+
+async function drawLibraryThumb(item, canvas) {
+  let bitmap = libraryThumbs.get(item.id);
+  if (!bitmap && !item.type.startsWith('video/')) {
+    const blob = await libraryBlob(item.id).catch(() => null);
+    bitmap = blob ? await createImageBitmap(blob, { resizeWidth: 128, resizeQuality: 'medium' }).catch(() => null) : null;
+    if (bitmap) libraryThumbs.set(item.id, bitmap);
+  }
+  const x = canvas.getContext('2d');
+  if (bitmap) {
+    const k = Math.min(128 / bitmap.width, 128 / bitmap.height);
+    x.drawImage(bitmap, (128 - bitmap.width * k) / 2, (128 - bitmap.height * k) / 2, bitmap.width * k, bitmap.height * k);
+  } else {
+    x.fillStyle = theme.fg;
+    x.font = '40px sans-serif';
+    x.textAlign = 'center';
+    x.fillText('▶', 64, 80);
+  }
+}
+
+async function saveBlob(blob, name) {
+  if (native) {
+    try {
+      const saved = await native.saveFile(name, new Uint8Array(await blob.arrayBuffer()));
+      if (saved) toast('saved ' + saved.split(/[\\/]/).pop());
+    } catch {
+      toast('could not save that file');
+    }
+    return;
+  }
+  const url = URL.createObjectURL(blob);
+  const link = el('a');
+  link.href = url;
+  link.download = name;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+
+async function exportLibraryAll() {
+  const files = [];
+  for (const item of libraryList()) {
+    const blob = await libraryBlob(item.id).catch(() => null);
+    if (blob) files.push({ name: item.name, data: new Uint8Array(await blob.arrayBuffer()) });
+  }
+  if (!files.length) return toast('nothing to export yet');
+  await saveBlob(buildZip(files), 'spin-images.zip');
+}
+
+/* ---------- zip: enough to read skin files and write an export, with no dependency ---------- */
+
+const CRC_TABLE = Array.from({ length: 256 }, (_, n) => {
+  for (let k = 0; k < 8; k++) n = n & 1 ? 0xedb88320 ^ (n >>> 1) : n >>> 1;
+  return n >>> 0;
+});
+function crc32(bytes) {
+  let crc = 0xffffffff;
+  for (const b of bytes) crc = CRC_TABLE[(crc ^ b) & 255] ^ (crc >>> 8);
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function buildZip(files) {
+  const encoder = new TextEncoder();
+  const used = new Set();
+  const parts = [], central = [];
+  let offset = 0;
+  for (const file of files) {
+    let name = file.name.replace(/[\\/:*?"<>|]/g, '_');
+    while (used.has(name)) name = '_' + name;
+    used.add(name);
+    const nameBytes = encoder.encode(name);
+    const crc = crc32(file.data);
+    const common = new DataView(new ArrayBuffer(26));
+    common.setUint16(0, 20, true);
+    common.setUint16(2, 0x0800, true);
+    common.setUint32(10, crc, true);
+    common.setUint32(14, file.data.length, true);
+    common.setUint32(18, file.data.length, true);
+    common.setUint16(22, nameBytes.length, true);
+    const local = new Uint8Array(30);
+    new DataView(local.buffer).setUint32(0, 0x04034b50, true);
+    local.set(new Uint8Array(common.buffer), 4);
+    parts.push(local, nameBytes, file.data);
+    const entry = new Uint8Array(46);
+    const view = new DataView(entry.buffer);
+    view.setUint32(0, 0x02014b50, true);
+    view.setUint16(4, 20, true);
+    entry.set(new Uint8Array(common.buffer), 6);
+    view.setUint32(42, offset, true);
+    central.push(entry, nameBytes);
+    offset += 30 + nameBytes.length + file.data.length;
+  }
+  const centralSize = central.reduce((sum, p) => sum + p.length, 0);
+  const end = new Uint8Array(22);
+  const endView = new DataView(end.buffer);
+  endView.setUint32(0, 0x06054b50, true);
+  endView.setUint16(8, files.length, true);
+  endView.setUint16(10, files.length, true);
+  endView.setUint32(12, centralSize, true);
+  endView.setUint32(16, offset, true);
+  return new Blob([...parts, ...central, end], { type: 'application/zip' });
+}
+
+async function readZip(buffer) {
+  const bytes = new Uint8Array(buffer);
+  const view = new DataView(buffer);
+  let end = bytes.length - 22;
+  while (end >= 0 && view.getUint32(end, true) !== 0x06054b50) end--;
+  if (end < 0) throw new Error('not a zip');
+  const count = Math.min(view.getUint16(end + 10, true), 1000);
+  let at = view.getUint32(end + 16, true);
+  const decoder = new TextDecoder();
+  const out = [];
+  for (let i = 0; i < count; i++) {
+    if (view.getUint32(at, true) !== 0x02014b50) break;
+    const method = view.getUint16(at + 10, true);
+    const packed = view.getUint32(at + 20, true);
+    const size = view.getUint32(at + 24, true);
+    const nameLength = view.getUint16(at + 28, true);
+    const extra = view.getUint16(at + 30, true);
+    const comment = view.getUint16(at + 32, true);
+    const local = view.getUint32(at + 42, true);
+    const name = decoder.decode(bytes.subarray(at + 46, at + 46 + nameLength));
+    at += 46 + nameLength + extra + comment;
+    if (name.endsWith('/') || size > 3e7) continue;
+    const start = local + 30 + view.getUint16(local + 26, true) + view.getUint16(local + 28, true);
+    const data = bytes.subarray(start, start + packed);
+    if (method === 0) out.push({ name, data });
+    else if (method === 8) {
+      const stream = new Blob([data]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+      out.push({ name, data: new Uint8Array(await new Response(stream).arrayBuffer()) });
+    }
+  }
+  return out;
+}
+
+const IMAGE_TYPES = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', bmp: 'image/bmp', webp: 'image/webp', apng: 'image/apng' };
+
+/* Takes a skin you already have, keeps its bigger images, and turns its playlist colours into a style. */
+async function importSkin(file) {
+  const skin = file.name.replace(SKIN_EXT, '');
+  try {
+    const entries = await readZip(await file.arrayBuffer());
+    let added = 0;
+    for (const { name, data } of entries) {
+      const type = IMAGE_TYPES[name.split('.').pop().toLowerCase()];
+      if (!type) continue;
+      const blob = new Blob([data], { type });
+      const size = await createImageBitmap(blob).catch(() => null);
+      if (!size) continue;
+      const big = size.width >= 64 && size.height >= 32;
+      size.close();
+      if (big && added < 60) {
+        await addToLibrary(blob, skin + ' - ' + name.split('/').pop(), skin);
+        added++;
+      }
+    }
+    const pledit = entries.find(e => /(^|\/)pledit\.txt$/i.test(e.name));
+    let styled = false;
+    if (pledit) {
+      const text = new TextDecoder('latin1').decode(pledit.data);
+      const colour = key => {
+        const m = text.match(new RegExp('^\\s*' + key + '\\s*=\\s*#?([0-9a-f]{6})', 'im'));
+        return m ? '#' + m[1].toLowerCase() : null;
+      };
+      const patch = { bg: colour('NormalBG'), fg: colour('Normal'), accent: colour('Current') };
+      if (patch.bg && patch.fg) {
+        /* Some skins use dim playlist text that would be unreadable at this size. */
+        if (contrast(patch.fg, patch.bg) < 4.5) patch.fg = isLight(patch.bg) ? '#000000' : '#ffffff';
+        const next = { ...theme, bg: patch.bg, fg: patch.fg, titleColor: 'fg', discColor: patch.bg };
+        if (patch.accent) { next.accentMode = 'fixed'; next.accent = patch.accent; }
+        store.set('themes', { ...store.get('themes', {}), [skin]: next });
+        setTheme(next);
+        styled = true;
+      }
+    }
+    toast(`${skin}: ${added} image${added === 1 ? '' : 's'}${styled ? ' and colours' : ''}`);
+    renderStyle();
+  } catch {
+    toast('could not read that skin file');
+  }
+}
+
+async function loadFontFace(name, data) {
+  const face = new FontFace(name, data);
+  await face.load();
+  document.fonts.add(face);
+}
+
+async function addFont(file) {
+  const name = file.name.replace(FONT_EXT, '');
+  try {
+    const data = await file.arrayBuffer();
+    await loadFontFace(name, data);
+    await handleDb('readwrite', s => s.put(data, 'theme:font:' + name));
+    setTheme({ fonts: [...new Set([...theme.fonts, name])], displayFont: name });
+    renderStyle();
+    toast('font added: ' + name);
+  } catch {
+    toast('could not read that font');
+  }
+}
+
+async function loadThemeAssets() {
+  for (const slot of ['disc', 'bg']) {
+    const blob = await handleDb('readonly', s => s.get('theme:' + slot)).catch(() => null);
+    if (blob) themeMedia[slot] = await loadMedia(blob).catch(() => null);
+  }
+  for (const name of theme.fonts) {
+    const data = await handleDb('readonly', s => s.get('theme:font:' + name)).catch(() => null);
+    if (data) await loadFontFace(name, data).catch(() => {});
+  }
+  fitTitle();
+}
+
+/* ---------- the style panel ---------- */
+
+let installedFonts = null;
+let thumbs = [];
+let lastThumbs = 0;
+
+async function listFonts() {
+  if (installedFonts) return installedFonts;
+  installedFonts = CURATED_FONTS;
+  if (window.queryLocalFonts) {
+    try {
+      const found = (await queryLocalFonts()).map(f => f.family);
+      if (found.length) installedFonts = [...new Set(found)].sort(collator.compare);
+    } catch {}
+  }
+  return installedFonts;
+}
+
+function toggleStyle(open = !document.body.classList.contains('styling')) {
+  if (open === document.body.classList.contains('styling')) return;
+  document.body.classList.toggle('styling', open);
+  if (open) {
+    state.styleFromMini = isMini();
+    if (isMini()) setWindowMode('full');
+    renderStyle();
+    listFonts().then(() => { if (document.body.classList.contains('styling')) renderStyle(); });
+  } else if (state.styleFromMini) {
+    setWindowMode('mini');
+  }
+  resize();
+  fitTitle();
+}
+
+function drawThumbs(animatedOnly = false) {
+  const rgb = `rgb(${accentTarget.r | 0},${accentTarget.g | 0},${accentTarget.b | 0})`;
+  for (const { canvas: c, style } of thumbs) {
+    if (animatedOnly && !DISC_STYLES[style].animated) continue;
+    const x = c.getContext('2d');
+    x.setTransform(2, 0, 0, 2, 0, 0);
+    x.clearRect(0, 0, 64, 64);
+    paintDisc(x, 32, 32, 28, .6, { ...discOptions(rgb), style, cover: null, sticker: null, wear: 0, scuffs: [] });
+  }
+}
+
+function field(text, control) {
+  const row = el('label', 'field');
+  row.append(el('span', '', text), control);
+  return row;
+}
+function colourField(text, key) {
+  const input = el('input');
+  input.type = 'color';
+  input.value = theme[key];
+  input.setAttribute('aria-label', text);
+  input.addEventListener('input', () => setTheme({ [key]: input.value }));
+  return field(text, input);
+}
+function rangeField(text, key, min, max, step) {
+  const input = el('input');
+  input.type = 'range';
+  Object.assign(input, { min, max, step, value: theme[key] });
+  input.setAttribute('aria-label', text);
+  input.addEventListener('input', () => setTheme({ [key]: Number(input.value) }));
+  return field(text, input);
+}
+function selectField(text, key, options) {
+  const select = el('select');
+  select.setAttribute('aria-label', text);
+  for (const [value, name] of options) {
+    const option = el('option', '', name);
+    option.value = value;
+    select.append(option);
+  }
+  select.value = theme[key];
+  select.addEventListener('change', () => { setTheme({ [key]: select.value }); renderStyle(); });
+  return field(text, select);
+}
+function chipRow(items) {
+  const row = el('div', 'chips');
+  for (const [name, on, run] of items) {
+    const chip = el('button', 'chip' + (on ? ' on' : ''), name);
+    chip.addEventListener('click', run);
+    row.append(chip);
+  }
+  return row;
+}
+function pickFile(accept, run) {
+  const input = $('theme-file');
+  input.accept = accept;
+  input.onchange = () => {
+    if (input.files[0]) run(input.files[0]);
+    input.value = '';
+  };
+  input.click();
+}
+const fontOptions = () => [['', 'Default'], ...[...new Set([...theme.fonts, ...(installedFonts || CURATED_FONTS)])].map(f => [f, f])];
+
+function exportTheme() {
+  return saveBlob(new Blob([JSON.stringify(theme, null, 2)], { type: 'application/json' }), 'spin-theme.json');
+}
+
+async function importTheme(file) {
+  try {
+    setTheme({ ...cleanTheme(JSON.parse(await file.text())), fonts: theme.fonts });
+    renderStyle();
+    toast('style imported');
+  } catch {
+    toast('that is not a Spin style file');
+  }
+}
+
+function renderStyle() {
+  const panel = $('style');
+  if (!document.body.classList.contains('styling')) return;
+  const keep = panel.scrollTop;
+  const mine = store.get('themes', {});
+  const nodes = [];
+
+  nodes.push(el('h2', '', 'presets'), chipRow([
+    ...Object.keys(PRESETS).map(name => [name, false, () => loadPreset(name)]),
+    ...Object.keys(mine).map(name => ['★ ' + name, false, () => { setTheme({ ...mine[name], fonts: theme.fonts }); renderStyle(); }]),
+  ]));
+
+  nodes.push(el('h2', '', 'record'));
+  const gallery = el('div', 'gallery');
+  thumbs = [];
+  for (const [style, info] of Object.entries(DISC_STYLES)) {
+    const button = el('button', 'thumb' + (theme.disc === style ? ' on' : ''));
+    const c = el('canvas');
+    c.width = c.height = 128;
+    button.append(c, el('span', '', info.name));
+    button.addEventListener('click', () => {
+      setTheme({ disc: style });
+      renderStyle();
+      if (style === 'image' && !themeMedia.disc) pickFile(MEDIA_ACCEPT, f => setThemeImage('disc', f));
+    });
+    gallery.append(button);
+    thumbs.push({ canvas: c, style });
+  }
+  nodes.push(gallery);
+
+  if (theme.disc === 'emoji') {
+    const input = el('input');
+    input.type = 'text';
+    input.value = theme.discText;
+    input.setAttribute('aria-label', 'Emoji or text on the record');
+    input.addEventListener('input', () => setTheme({ discText: input.value }));
+    nodes.push(field('emoji or text', input));
+  }
+  if (theme.disc === 'image') {
+    nodes.push(selectField('shape', 'imageShape', THEME_CHOICES.imageShape.map(s => [s, s])));
+    if (themeMedia.disc) nodes.push(chipRow([['remove from record', false, () => clearThemeImage('disc')]]));
+    nodes.push(el('div', 'hint', 'Shape "original" keeps a transparent PNG or GIF outline.'));
+  }
+  nodes.push(
+    colourField('record colour', 'discColor'),
+    selectField('label colour', 'labelMode', [['accent', 'follow accent'], ['custom', 'custom']]),
+  );
+  if (theme.labelMode === 'custom') nodes.push(colourField('label', 'labelColor'));
+  nodes.push(
+    selectField('album art', 'cover', [['fill', 'fill the record'], ['label', 'on the label'], ['off', 'off']]),
+    rangeField('spin speed', 'spin', -3, 3, .25),
+    rangeField('size', 'size', .6, 1.25, .05),
+  );
+
+  nodes.push(el('h2', '', 'my images, gifs and skins'));
+  const library = libraryList();
+  if (library.length) {
+    const tiles = el('div', 'gallery');
+    for (const item of library) {
+      const tile = el('button', 'libtile' + (libraryPick === item.id ? ' on' : ''));
+      tile.title = item.name;
+      const c = el('canvas');
+      c.width = c.height = 128;
+      tile.append(c, el('span', '', item.name));
+      drawLibraryThumb(item, c);
+      tile.addEventListener('click', async () => {
+        libraryPick = item.id;
+        const blob = await libraryBlob(item.id);
+        await setThemeImage('disc', blob, false);
+      });
+      tiles.append(tile);
+    }
+    nodes.push(tiles);
+  } else {
+    nodes.push(el('div', 'hint', 'GIFs, animated WebP or PNG, MP4 or WebM loops, and images from skin files appear here.'));
+  }
+  const picked = library.find(item => item.id === libraryPick);
+  nodes.push(chipRow([
+    ['add gif, image or video', false, () => pickFile(MEDIA_ACCEPT, f => setThemeImage('disc', f))],
+    ['import skin', false, () => pickFile('.wsz,.wal,.vlt,.zip', importSkin)],
+    ...(library.length ? [['export all', false, exportLibraryAll]] : []),
+    ...(picked ? [
+      ['use as background', false, async () => setThemeImage('bg', await libraryBlob(picked.id), false)],
+      ['export', false, async () => saveBlob(await libraryBlob(picked.id), picked.name)],
+      ['delete', false, () => deleteFromLibrary(picked.id)],
+    ] : []),
+  ]));
+
+  nodes.push(el('h2', '', 'ring'), chipRow(THEME_CHOICES.ring.map(ring => [ring, theme.ring === ring, () => { setTheme({ ring }); renderStyle(); }])));
+  nodes.push(rangeField('glow', 'glow', 0, 2, .1));
+
+  nodes.push(el('h2', '', 'colours'), colourField('background', 'bg'), colourField('text', 'fg'),
+    selectField('accent', 'accentMode', [['auto', 'from each song'], ['fixed', 'always the same']]));
+  if (theme.accentMode === 'fixed') nodes.push(colourField('accent colour', 'accent'));
+  nodes.push(selectField('big title', 'titleColor', [['invert', 'invert over the ring'], ['fg', 'text colour'], ['accent', 'accent colour']]));
+  const warn = el('div', 'note', 'text is hard to read on this background. shift+t resets.');
+  warn.id = 'style-contrast';
+  warn.hidden = contrast(theme.fg, theme.bg) >= 3;
+  nodes.push(warn);
+
+  nodes.push(el('h2', '', 'background'), chipRow([
+    ['choose gif, image or video', false, () => pickFile(MEDIA_ACCEPT, f => setThemeImage('bg', f))],
+    ...(themeMedia.bg ? [['remove', false, () => clearThemeImage('bg')]] : []),
+  ]));
+  if (themeMedia.bg) nodes.push(rangeField('dim', 'bgDim', 0, 1, .05));
+
+  nodes.push(el('h2', '', 'fonts'),
+    selectField('title', 'displayFont', fontOptions()),
+    selectField('everything else', 'uiFont', fontOptions()),
+    rangeField('title weight', 'titleWeight', 100, 900, 100),
+    selectField('title case', 'titleCase', [['upper', 'UPPERCASE'], ['none', 'as written']]),
+    chipRow([['add font file', false, () => pickFile('.ttf,.otf,.woff,.woff2', addFont)]]),
+    el('div', 'hint', 'ttf, otf or woff. You can also drop a font file on the window.'));
+
+  const saveName = el('input');
+  saveName.type = 'text';
+  saveName.placeholder = 'name this style';
+  saveName.setAttribute('aria-label', 'Name for this style');
+  const save = () => {
+    const name = saveName.value.trim();
+    if (!name) return saveName.focus();
+    store.set('themes', { ...store.get('themes', {}), [name]: theme });
+    toast('saved ' + name);
+    renderStyle();
+  };
+  saveName.addEventListener('keydown', e => { if (e.key === 'Enter') save(); });
+  nodes.push(el('h2', '', 'keep and share'), field('save as', saveName), chipRow([
+    ['save', false, save],
+    ['export', false, exportTheme],
+    ['import', false, () => pickFile('.json', importTheme)],
+    ['reset', false, resetTheme],
+    ...Object.keys(mine).map(name => ['delete ' + name, false, () => {
+      const left = { ...mine };
+      delete left[name];
+      store.set('themes', left);
+      renderStyle();
+    }]),
+  ]), el('div', 'hint', 'Exports leave out images and font files. Esc closes this panel.'));
+
+  panel.replaceChildren(...nodes);
+  panel.scrollTop = keep;
+  drawThumbs();
+}
+
+/* ---------- personal touches ---------- */
+
+let userName = '';
+
+function timeWord() {
+  const h = new Date().getHours();
+  return h < 5 ? 'Still up' : h < 12 ? 'Morning' : h < 18 ? 'Afternoon' : 'Evening';
+}
+
+function showGreeting() {
+  const word = timeWord();
+  $('title').textContent = (word === 'Still up' ? word : 'Good ' + word.toLowerCase()) + (userName ? ', ' + userName : '');
+  $('artist').textContent = 'press o to open a folder';
+  fitTitle();
+}
+
+/* Wear: the more a song is played, the more worn its record looks. Same song, same scratches. */
+function loadWear(t) {
+  const plays = peek(t) ? peek(t).plays : 0;
+  state.wear = 1 - Math.exp(-plays / 25);
+  let seed = 7;
+  for (const c of t.key) seed = (seed * 31 + c.codePointAt(0)) >>> 0;
+  const random = () => (seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32;
+  state.scuffs = Array.from({ length: Math.round(state.wear * 16) }, () => ({
+    at: .42 + random() * .56, from: random() * Math.PI * 2, len: .1 + random() * .5,
+  }));
+}
+
+/* Marks: moments you love, shown as notches on the ring. The record snaps to them. */
+function toggleMark() {
+  const t = current();
+  if (!t || !isFinite(audio.duration)) return;
+  const r = record(t);
+  const near = r.marks.findIndex(m => Math.abs(m - audio.currentTime) < 2);
+  if (near >= 0) {
+    r.marks.splice(near, 1);
+    toast('mark removed');
+  } else {
+    r.marks.push(audio.currentTime);
+    r.marks.sort((a, b) => a - b);
+    toast('marked ' + clock(audio.currentTime));
+  }
+}
+
+function jumpMark(dir) {
+  const t = current();
+  const marks = t && peek(t) ? peek(t).marks : [];
+  const now = audio.currentTime;
+  const target = dir > 0 ? marks.find(m => m > now + 1) : [...marks].reverse().find(m => m < now - 1);
+  if (target === undefined) return toast(marks.length ? 'no more marks' : 'no marks: press b to add one');
+  audio.currentTime = target;
+}
+
+function snapToMark(time, reach) {
+  const t = current();
+  const marks = t && peek(t) ? peek(t).marks : [];
+  let best = time, bestGap = reach;
+  for (const m of marks) {
+    if (Math.abs(m - time) <= bestGap) { best = m; bestGap = Math.abs(m - time); }
+  }
+  return best;
+}
+
+/* Stickers: images on the record's centre label, for a song, its album folder, or everything. */
+const stickerKeys = t => ({
+  song: 'sticker:song:' + t.key,
+  album: 'sticker:album:' + t.key.slice(0, t.key.lastIndexOf('/')),
+  app: 'sticker:app',
+});
+
+async function setSticker(file, scope) {
+  const t = current();
+  if (!t) return toast('play something first');
+  try {
+    const source = await createImageBitmap(file);
+    const c = document.createElement('canvas');
+    const k = 320 / Math.min(source.width, source.height);
+    c.width = Math.round(source.width * k);
+    c.height = Math.round(source.height * k);
+    c.getContext('2d').drawImage(source, 0, 0, c.width, c.height);
+    const blob = await new Promise(ok => c.toBlob(ok, 'image/png'));
+    await handleDb('readwrite', s => s.put(blob, stickerKeys(t)[scope]));
+    toast('sticker: ' + (scope === 'song' ? 'this song' : scope === 'album' ? 'this folder' : 'every song'));
+    await refreshSticker(t);
+  } catch {
+    toast('could not read that image');
+  }
+}
+
+async function loadSticker(t, id) {
+  const keys = stickerKeys(t);
+  for (const key of [keys.song, keys.album, keys.app]) {
+    const blob = await handleDb('readonly', s => s.get(key)).catch(() => null);
+    if (id !== state.loadId) return;
+    const bitmap = blob ? await createImageBitmap(blob).catch(() => null) : null;
+    if (id !== state.loadId) return;
+    if (bitmap) {
+      state.sticker = { bitmap };
+      state.stickerKey = key;
+      return;
+    }
+  }
+  state.sticker = null;
+  state.stickerKey = null;
+}
+
+async function refreshSticker(t) {
+  await loadSticker(t, state.loadId);
+  if (state.cover) return;
+  setAccent(state.sticker ? accentFromImage(state.sticker.bitmap) : accentFromText(t.title));
+}
+
+async function removeSticker() {
+  const t = current();
+  if (!t || !state.stickerKey) return toast('no sticker here');
+  await handleDb('readwrite', s => s.delete(state.stickerKey)).catch(() => {});
+  toast('sticker removed');
+  await refreshSticker(t);
+}
+
+/* Game mode: while a game has the foreground, the widget is just the record until you hover it. */
+let gameDetected = false, gameForced = null, pointerInside = false, collapseTimer = null, compactWanted = false, compactBusy = false;
+function gameActive() { return gameForced === null ? gameDetected : gameForced; }
+
+function refreshGame() {
+  applyVolume();
+  syncCompact();
+}
+
+function toggleGame() {
+  if (!native) return toast('game mode is in the desktop app');
+  gameForced = !gameActive();
+  toast('game mode ' + (gameForced ? 'on' : 'off'));
+  refreshGame();
+}
+
+async function syncCompact() {
+  if (!native) return;
+  compactWanted = gameActive() && isMini() && !pointerInside && !state.sheet && !document.body.classList.contains('styling');
+  if (compactBusy) return;
+  compactBusy = true;
+  while (compactWanted !== document.body.classList.contains('compact')) {
+    const on = await native.setCompact(compactWanted);
+    document.body.classList.toggle('compact', on);
+    resize();
+    if (on !== compactWanted && !isMini()) break;
+  }
+  compactBusy = false;
+}
+
+document.documentElement.addEventListener('mouseenter', () => {
+  pointerInside = true;
+  clearTimeout(collapseTimer);
+  syncCompact();
+});
+document.documentElement.addEventListener('mouseleave', () => {
+  clearTimeout(collapseTimer);
+  collapseTimer = setTimeout(async () => {
+    /* Resizing makes Chromium report a leave even under a still pointer, so check where it really is. */
+    if (scratch || (native && await native.cursorInside())) return;
+    pointerInside = false;
+    syncCompact();
+  }, 1200);
+});
+
+/* Sheets: the few full-window pages. Opened from the widget, closing one returns to the widget. */
+const el = (tag, className, text) => {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+};
+
+function openSheet(name, nodes) {
+  if (!state.sheet) state.sheetFromMini = isMini();
+  state.sheet = name;
+  if (isMini()) setWindowMode('full');
+  const box = el('div');
+  box.append(...nodes);
+  $('sheet').replaceChildren(box);
+  $('sheet').classList.add('open');
+}
+
+function closeSheet() {
+  state.sheet = null;
+  $('sheet').classList.remove('open');
+  if (state.sheetFromMini) setWindowMode('mini');
+}
+
+$('sheet').addEventListener('click', e => { if (e.target === $('sheet')) closeSheet(); });
+
+function openHelp() {
+  const keys = [
+    ['t', 'style: colours, fonts, record, ring. right-click the record works too'],
+    ['shift+t', 'reset the style to default'],
+    ['b', 'mark this moment, again to remove'],
+    ['[  ]', 'jump between marks'],
+    ['i', 'choose a sticker for this song'],
+    ['drop an image', 'sticker for this song. shift: its folder. ctrl or cmd: every song'],
+    ['x', 'remove the sticker'],
+    ['c', 'crates: switch folders'],
+    ['y', 'your year in music'],
+    ['g', 'game mode on or off'],
+    ['e', 'mini or full view'],
+    ['f', 'fullscreen'],
+    ['/', 'filter tracks'],
+    [',', 'open settings.json: name, global hotkeys, games'],
+  ].filter(([key]) => native || !['c', 'g', 'e', ','].includes(key));
+  openSheet('help', [
+    el('div', 'sheet-big', 'Keys'),
+    el('div', 'sheet-sub', 'esc to close'),
+    ...keys.map(([key, text]) => {
+      const row = el('div', 'sheet-row');
+      const k = el('i', '', key);
+      k.style.width = '130px';
+      row.append(k, el('span', '', text));
+      return row;
+    }),
+  ]);
+}
+
+function openReview() {
+  const year = new Date().getFullYear();
+  const songs = Object.values(memory.tracks)
+    .filter(r => r.years[year] && r.title)
+    .sort((a, b) => b.years[year] - a.years[year]);
+  const seconds = songs.reduce((sum, r) => sum + r.years[year], 0);
+  if (seconds < 60) {
+    return openSheet('review', [el('div', 'sheet-big', String(year)), el('div', 'sheet-sub', 'Nothing to look back on yet. Play something.')]);
+  }
+  const artists = {};
+  const byHour = {};
+  for (const r of songs) {
+    if (r.artist) artists[r.artist] = (artists[r.artist] || 0) + r.years[year];
+    for (const [h, n] of Object.entries(r.hours)) byHour[h] = (byHour[h] || 0) + n;
+  }
+  const topArtists = Object.entries(artists).sort((a, b) => b[1] - a[1]).slice(0, 3);
+  const topHour = Object.entries(byHour).sort((a, b) => b[1] - a[1])[0];
+  const row = (label, value) => {
+    const node = el('div', 'sheet-row');
+    const name = el('span', '', label);
+    name.dir = 'auto';
+    node.append(name, el('i', '', value));
+    return node;
+  };
+  const spent = s => (s >= 3600 ? (s / 3600).toFixed(1) + ' h' : s < 60 ? '<1 min' : Math.round(s / 60) + ' min');
+  const parts = [String(year)];
+  if (userName) parts[0] += ', ' + userName;
+  if (topHour) parts.push('Mostly around ' + String(topHour[0]).padStart(2, '0') + ':00');
+  parts.push('Only stored on this computer');
+  openSheet('review', [
+    el('div', 'sheet-big', seconds >= 3600 ? (seconds / 3600).toFixed(1) + ' hours' : Math.round(seconds / 60) + ' min'),
+    el('div', 'sheet-sub', parts.join('. ')),
+    el('div', 'sheet-title', 'top songs'),
+    ...songs.slice(0, 5).map(r => row((r.artist ? r.artist + ' - ' : '') + r.title, spent(r.years[year]))),
+    ...(topArtists.length ? [el('div', 'sheet-title', 'top artists'), ...topArtists.map(([a, s]) => row(a, spent(s)))] : []),
+  ]);
+}
+
+/* Crates: named folders, each keeping its own place and shuffle setting. */
+async function switchCrate(crate) {
+  savePosition();
+  saveMemory();
+  closeSheet();
+  try {
+    await openNative(crate.folder, true);
+  } catch {
+    toast('folder is gone: ' + crate.folder);
+  }
+}
+
+function openCrates() {
+  if (!native) return toast('crates are in the desktop app');
+  const rows = memory.crates.map((crate, i) => {
+    const row = el('div', 'sheet-row' + (crate === state.crate ? ' current' : ''));
+    const open = el('button', 'crate-open', crate.name);
+    open.dir = 'auto';
+    open.addEventListener('click', () => switchCrate(crate));
+    const rename = el('button', 'crate-action', 'rename');
+    rename.addEventListener('click', () => {
+      const input = el('input');
+      input.value = crate.name;
+      input.setAttribute('aria-label', 'Crate name');
+      row.replaceChild(input, open);
+      input.focus();
+      input.select();
+      input.addEventListener('keydown', e => {
+        if (e.key === 'Enter' && input.value.trim()) {
+          crate.name = input.value.trim();
+          memoryDirty = true;
+          openCrates();
+        } else if (e.key === 'Escape') {
+          openCrates();
+        }
+      });
+    });
+    row.append(el('i', '', String(i + 1)), open, rename);
+    if (crate !== state.crate) {
+      const remove = el('button', 'crate-action', 'remove');
+      remove.addEventListener('click', () => {
+        memory.crates.splice(i, 1);
+        memoryDirty = true;
+        openCrates();
+      });
+      row.append(remove);
+    }
+    return row;
+  });
+  const add = el('button', 'sheet-add', '+ add a folder');
+  add.addEventListener('click', () => { closeSheet(); openFolder(); });
+  openSheet('crates', [
+    el('div', 'sheet-big', 'Crates'),
+    el('div', 'sheet-sub', 'each keeps its own place and shuffle. number keys to switch, esc to close'),
+    ...rows,
+    add,
+  ]);
+}
+
+async function boot() {
+  applyTheme();
+  loadThemeAssets();
+  if (native) {
+    native.onCommand(command => ({
+      playPause: togglePlay,
+      next: skipNext,
+      previous,
+      volumeUp: () => nudgeVolume(.05),
+      volumeDown: () => nudgeVolume(-.05),
+      mark: toggleMark,
+    }[command] || (() => {}))());
+    native.onGame(game => {
+      gameDetected = game.active;
+      gameForced = null;
+      refreshGame();
+    });
+    native.onConfig(config => {
+      userName = config.name || '';
+      if (config.error) toast('settings.json has an error, keeping the old settings');
+      else if (config.failedHotkeys.length) toast('hotkey taken: ' + config.failedHotkeys.join(', '));
+      if (!state.tracks.length) showGreeting();
+    });
+    const config = await native.config();
+    userName = config.name || '';
+    if (config.failedHotkeys.length) toast('hotkey taken: ' + config.failedHotkeys.join(', '));
+    memory = { ...memory, ...(await native.loadMemory() || {}) };
+  } else {
+    memory = { ...memory, ...store.get('memory', {}) };
+  }
+  applyVolume();
+  showGreeting();
+
+  /* The app reopens the last folder at launch, cued and paused so it never starts blasting. */
+  if (native) {
+    const folder = store.get('folder', null);
+    if (folder) openNative(folder, false).catch(() => toast('last folder is gone: ' + folder));
+    return;
+  }
+  const handle = await loadHandle();
+  if (!handle) return;
+  savedHandle = handle;
+  $('title').textContent = 'Resume ' + handle.name;
+  $('artist').textContent = 'space to continue, o for another folder';
+  fitTitle();
+}
+boot();
+</script>
+</body>
+</html>
