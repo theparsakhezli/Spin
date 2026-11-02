@@ -66,7 +66,7 @@
       "icon": "build/icon.png",
       "executableName": "spin",
       "synopsis": "A minimal, very personal music player",
-      "maintainer": "Spin contributors <noreply@example.com>"
+      "maintainer": "theparsakhezli <theparsakhezli@users.noreply.github.com>"
     }
   },
   "devDependencies": {
@@ -75,5 +75,9 @@
     "playwright-core": "^1.64.1"
   },
   "license": "MIT",
-  "homepage": "https://example.com/replace-with-your-repo-url"
+  "homepage": "https://github.com/theparsakhezli/Spin",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/theparsakhezli/Spin.git"
+  }
 }
