@@ -2,7 +2,6 @@ const { app, BrowserWindow, dialog, globalShortcut, ipcMain, protocol, screen, s
 const { execFile, spawn } = require('child_process');
 const fsSync = require('fs');
 const fs = require('fs/promises');
-const os = require('os');
 const path = require('path');
 const { Readable } = require('stream');
 
@@ -86,11 +85,11 @@ function applyMode() {
 /* ---------- settings.json: the one file a person edits by hand ---------- */
 
 const configFile = () => path.join(app.getPath('userData'), 'settings.json');
-const username = os.userInfo().username;
 /* GNOME and KDE use Ctrl+Alt+arrows to switch workspaces, so Linux gets an extra Shift. */
 const HOTKEY_PREFIX = process.platform === 'linux' ? 'Ctrl+Alt+Shift+' : 'Ctrl+Alt+';
 const DEFAULT_CONFIG = {
-  name: username.charAt(0).toUpperCase() + username.slice(1),
+  /* Empty until the person types their own; login names are often things like "user" or "DESKTOP-4F2K". */
+  name: '',
   hotkeys: {
     playPause: HOTKEY_PREFIX + 'Space',
     next: HOTKEY_PREFIX + 'Right',

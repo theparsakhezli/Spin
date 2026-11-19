@@ -139,18 +139,28 @@
     color: var(--dim); font-size: 12px; margin: 0; min-height: 0;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  body.mini #mini { display: block; position: fixed; left: 118px; right: 14px; top: 78px; }
-  #mini-times { display: flex; justify-content: space-between; font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums; }
+  body.mini #mini { display: block; position: fixed; left: 118px; right: 14px; top: 74px; }
+  #mini-times { display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: var(--dim); font-variant-numeric: tabular-nums; }
   #mini-track { display: flex; align-items: center; height: 14px; cursor: pointer; touch-action: none; }
   #mini-rail { flex: 1; height: 4px; border-radius: 2px; background: color-mix(in srgb, var(--fg) 18%, transparent); overflow: hidden; }
   #mini-fill { display: block; height: 100%; width: 0; background: var(--accent); }
-  body.mini #mini-controls {
-    display: flex; gap: 2px; position: fixed; top: 3px; left: 10px; -webkit-app-region: no-drag;
+  /* Transport sits between the two times, right where the eye already is. */
+  body.mini #mini-controls { display: flex; align-items: center; gap: 10px; -webkit-app-region: no-drag; }
+  #mini-controls button {
+    display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%;
+    color: var(--dim); transition: color .15s, background .15s, transform .1s;
   }
-  #mini-controls button { display: flex; padding: 2px; color: var(--fg); }
-  #mini-controls button:hover { color: var(--accent); }
-  #mini-controls svg { width: 16px; height: 16px; fill: currentColor; }
-  body.native.mini #toast { top: 6px; left: 84px; right: 92px; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #mini-controls button:hover { color: var(--fg); background: color-mix(in srgb, var(--fg) 10%, transparent); }
+  #mini-controls button:active { transform: scale(.9); }
+  /* A matching stroke rounds the sharp corners of the filled icons. */
+  #mini-controls svg { width: 12px; height: 12px; fill: currentColor; stroke: currentColor; stroke-width: 2.5; stroke-linejoin: round; }
+  #mini-controls #m-play {
+    width: 30px; height: 30px; color: var(--bg); background: var(--accent);
+    box-shadow: 0 0 14px color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+  #mini-controls #m-play:hover { color: var(--bg); background: color-mix(in srgb, var(--accent) 85%, #fff); }
+  #mini-controls #m-play svg { width: 13px; height: 13px; }
+  body.native.mini #toast { top: 6px; left: 12px; right: 92px; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
   /* Game mode: only the record stays on screen until the pointer comes near. */
   body.compact #now, body.compact #mini, body.compact #lights, body.compact #mini-controls,
@@ -208,7 +218,19 @@
   body.native #style { top: 32px; padding-top: 12px; }
   body.styling #now, body.styling #bar { right: 404px; }
   #style h2 { font: inherit; color: var(--dim); margin: 20px 0 8px; }
-  #style h2:first-of-type { margin-top: 0; }
+  #style .tab-hint + h2 { margin-top: 14px; }
+  /* Tabs stay pinned while the section below scrolls. */
+  #style .tabs {
+    position: sticky; top: -12px; z-index: 1; display: flex; gap: 2px; margin: -12px -18px 0; padding: 12px 18px 0;
+    background: var(--bg); border-bottom: 1px solid color-mix(in srgb, var(--fg) 12%, transparent);
+  }
+  #style .tab {
+    flex: 1; padding: 8px 4px 10px; color: var(--dim); border-bottom: 2px solid transparent; margin-bottom: -1px;
+    transition: color .15s, border-color .15s;
+  }
+  #style .tab:hover { color: var(--fg); }
+  #style .tab.on { color: var(--fg); border-bottom-color: var(--accent); }
+  #style .tab-hint { margin: 12px 0 0; }
   #style .chips { display: flex; flex-wrap: wrap; gap: 6px; }
   #style .chip {
     padding: 5px 9px; border: 1px solid color-mix(in srgb, var(--fg) 18%, transparent); border-radius: 6px; color: var(--fg);
@@ -252,13 +274,16 @@
   <button id="w-mode" aria-label="Switch between mini and full view" title="Mini / full (e)"><svg viewBox="0 0 10 10"><rect x=".5" y=".5" width="9" height="9"/></svg></button>
   <button id="w-close" aria-label="Close" title="Close"><svg viewBox="0 0 10 10"><path d="M.5.5l9 9M9.5.5l-9 9"/></svg></button>
 </div>
-<div id="mini-controls">
-  <button id="m-prev" aria-label="Previous track"><svg viewBox="0 0 24 24"><path d="M6 5h2v14H6zM20 5v14L9 12z"/></svg></button>
-  <button id="m-play" aria-label="Play or pause"><svg viewBox="0 0 24 24"><path id="m-play-icon" d="M7 5v14l12-7z"/></svg></button>
-  <button id="m-next" aria-label="Next track"><svg viewBox="0 0 24 24"><path d="M16 5h2v14h-2zM4 5v14l11-7z"/></svg></button>
-</div>
 <div id="mini">
-  <div id="mini-times"><span id="mini-cur">--:--</span><span id="mini-dur">--:--</span></div>
+  <div id="mini-times">
+    <span id="mini-cur">--:--</span>
+    <div id="mini-controls">
+      <button id="m-prev" aria-label="Previous track"><svg viewBox="0 0 24 24"><path d="M6 5h2v14H6zM20 5v14L9 12z"/></svg></button>
+      <button id="m-play" aria-label="Play or pause"><svg viewBox="0 0 24 24"><path id="m-play-icon" d="M7 5v14l12-7z"/></svg></button>
+      <button id="m-next" aria-label="Next track"><svg viewBox="0 0 24 24"><path d="M16 5h2v14h-2zM4 5v14l11-7z"/></svg></button>
+    </div>
+    <span id="mini-dur">--:--</span>
+  </div>
   <div id="mini-track"><div id="mini-rail"><span id="mini-fill"></span></div></div>
 </div>
 
@@ -2700,6 +2725,14 @@ async function loadThemeAssets() {
 
 let installedFonts = null;
 let thumbs = [];
+const STYLE_TABS = { themes: 'Themes', record: 'Record', colours: 'Colours', fonts: 'Fonts' };
+const STYLE_TAB_HINTS = {
+  themes: 'Start from a ready look, or save yours to use again and share.',
+  record: 'What spins in the middle, and the ring that moves around it.',
+  colours: 'Background, text and accent colours, or a picture behind everything.',
+  fonts: 'The big song title and all the small text.',
+};
+let styleTab = store.get('styleTab', 'themes') in STYLE_TABS ? store.get('styleTab', 'themes') : 'themes';
 let lastThumbs = 0;
 
 async function listFonts() {
@@ -2813,107 +2846,127 @@ function renderStyle() {
   const keep = panel.scrollTop;
   const mine = store.get('themes', {});
   const nodes = [];
+  thumbs = [];
 
-  nodes.push(el('h2', '', 'presets'), chipRow([
+  const tabs = el('div', 'tabs');
+  tabs.setAttribute('role', 'tablist');
+  for (const [key, name] of Object.entries(STYLE_TABS)) {
+    const tab = el('button', 'tab' + (styleTab === key ? ' on' : ''), name);
+    tab.setAttribute('role', 'tab');
+    tab.setAttribute('aria-selected', styleTab === key);
+    tab.addEventListener('click', () => {
+      styleTab = key;
+      store.set('styleTab', key);
+      panel.scrollTop = 0;
+      renderStyle();
+    });
+    tabs.append(tab);
+  }
+  nodes.push(tabs, el('div', 'hint tab-hint', STYLE_TAB_HINTS[styleTab]));
+
+  if (styleTab === 'themes') nodes.push(el('h2', '', 'presets'), chipRow([
     ...Object.keys(PRESETS).map(name => [name, false, () => loadPreset(name)]),
     ...Object.keys(mine).map(name => ['★ ' + name, false, () => { setTheme({ ...mine[name], fonts: theme.fonts }); renderStyle(); }]),
   ]));
 
-  nodes.push(el('h2', '', 'record'));
-  const gallery = el('div', 'gallery');
-  thumbs = [];
-  for (const [style, info] of Object.entries(DISC_STYLES)) {
-    const button = el('button', 'thumb' + (theme.disc === style ? ' on' : ''));
-    const c = el('canvas');
-    c.width = c.height = 128;
-    button.append(c, el('span', '', info.name));
-    button.addEventListener('click', () => {
-      setTheme({ disc: style });
-      renderStyle();
-      if (style === 'image' && !themeMedia.disc) pickFile(MEDIA_ACCEPT, f => setThemeImage('disc', f));
-    });
-    gallery.append(button);
-    thumbs.push({ canvas: c, style });
-  }
-  nodes.push(gallery);
-
-  if (theme.disc === 'emoji') {
-    const input = el('input');
-    input.type = 'text';
-    input.value = theme.discText;
-    input.setAttribute('aria-label', 'Emoji or text on the record');
-    input.addEventListener('input', () => setTheme({ discText: input.value }));
-    nodes.push(field('emoji or text', input));
-  }
-  if (theme.disc === 'image') {
-    nodes.push(selectField('shape', 'imageShape', THEME_CHOICES.imageShape.map(s => [s, s])));
-    if (themeMedia.disc) nodes.push(chipRow([['remove from record', false, () => clearThemeImage('disc')]]));
-    nodes.push(el('div', 'hint', 'Shape "original" keeps a transparent PNG or GIF outline.'));
-  }
-  nodes.push(
-    colourField('record colour', 'discColor'),
-    selectField('label colour', 'labelMode', [['accent', 'follow accent'], ['custom', 'custom']]),
-  );
-  if (theme.labelMode === 'custom') nodes.push(colourField('label', 'labelColor'));
-  nodes.push(
-    selectField('album art', 'cover', [['fill', 'fill the record'], ['label', 'on the label'], ['off', 'off']]),
-    rangeField('spin speed', 'spin', -3, 3, .25),
-    rangeField('size', 'size', .6, 1.25, .05),
-  );
-
-  nodes.push(el('h2', '', 'my images, gifs and skins'));
-  const library = libraryList();
-  if (library.length) {
-    const tiles = el('div', 'gallery');
-    for (const item of library) {
-      const tile = el('button', 'libtile' + (libraryPick === item.id ? ' on' : ''));
-      tile.title = item.name;
+  if (styleTab === 'record') {
+    nodes.push(el('h2', '', 'record'));
+    const gallery = el('div', 'gallery');
+    for (const [style, info] of Object.entries(DISC_STYLES)) {
+      const button = el('button', 'thumb' + (theme.disc === style ? ' on' : ''));
       const c = el('canvas');
       c.width = c.height = 128;
-      tile.append(c, el('span', '', item.name));
-      drawLibraryThumb(item, c);
-      tile.addEventListener('click', async () => {
-        libraryPick = item.id;
-        const blob = await libraryBlob(item.id);
-        await setThemeImage('disc', blob, false);
+      button.append(c, el('span', '', info.name));
+      button.addEventListener('click', () => {
+        setTheme({ disc: style });
+        renderStyle();
+        if (style === 'image' && !themeMedia.disc) pickFile(MEDIA_ACCEPT, f => setThemeImage('disc', f));
       });
-      tiles.append(tile);
+      gallery.append(button);
+      thumbs.push({ canvas: c, style });
     }
-    nodes.push(tiles);
-  } else {
-    nodes.push(el('div', 'hint', 'GIFs, animated WebP or PNG, MP4 or WebM loops, and images from skin files appear here.'));
+    nodes.push(gallery);
+
+    if (theme.disc === 'emoji') {
+      const input = el('input');
+      input.type = 'text';
+      input.value = theme.discText;
+      input.setAttribute('aria-label', 'Emoji or text on the record');
+      input.addEventListener('input', () => setTheme({ discText: input.value }));
+      nodes.push(field('emoji or text', input));
+    }
+    if (theme.disc === 'image') {
+      nodes.push(selectField('shape', 'imageShape', THEME_CHOICES.imageShape.map(s => [s, s])));
+      if (themeMedia.disc) nodes.push(chipRow([['remove from record', false, () => clearThemeImage('disc')]]));
+      nodes.push(el('div', 'hint', 'Shape "original" keeps a transparent PNG or GIF outline.'));
+    }
+    nodes.push(
+      colourField('record colour', 'discColor'),
+      selectField('label colour', 'labelMode', [['accent', 'follow accent'], ['custom', 'custom']]),
+    );
+    if (theme.labelMode === 'custom') nodes.push(colourField('label', 'labelColor'));
+    nodes.push(
+      selectField('album art', 'cover', [['fill', 'fill the record'], ['label', 'on the label'], ['off', 'off']]),
+      rangeField('spin speed', 'spin', -3, 3, .25),
+      rangeField('size', 'size', .6, 1.25, .05),
+    );
+
+    nodes.push(el('h2', '', 'my images, gifs and skins'));
+    const library = libraryList();
+    if (library.length) {
+      const tiles = el('div', 'gallery');
+      for (const item of library) {
+        const tile = el('button', 'libtile' + (libraryPick === item.id ? ' on' : ''));
+        tile.title = item.name;
+        const c = el('canvas');
+        c.width = c.height = 128;
+        tile.append(c, el('span', '', item.name));
+        drawLibraryThumb(item, c);
+        tile.addEventListener('click', async () => {
+          libraryPick = item.id;
+          const blob = await libraryBlob(item.id);
+          await setThemeImage('disc', blob, false);
+        });
+        tiles.append(tile);
+      }
+      nodes.push(tiles);
+    } else {
+      nodes.push(el('div', 'hint', 'GIFs, animated WebP or PNG, MP4 or WebM loops, and images from skin files appear here.'));
+    }
+    const picked = library.find(item => item.id === libraryPick);
+    nodes.push(chipRow([
+      ['add gif, image or video', false, () => pickFile(MEDIA_ACCEPT, f => setThemeImage('disc', f))],
+      ['import skin', false, () => pickFile('.wsz,.wal,.vlt,.zip', importSkin)],
+      ...(library.length ? [['export all', false, exportLibraryAll]] : []),
+      ...(picked ? [
+        ['use as background', false, async () => setThemeImage('bg', await libraryBlob(picked.id), false)],
+        ['export', false, async () => saveBlob(await libraryBlob(picked.id), picked.name)],
+        ['delete', false, () => deleteFromLibrary(picked.id)],
+      ] : []),
+    ]));
+
+    nodes.push(el('h2', '', 'ring around the record'), chipRow(THEME_CHOICES.ring.map(ring => [ring, theme.ring === ring, () => { setTheme({ ring }); renderStyle(); }])));
+    nodes.push(rangeField('glow', 'glow', 0, 2, .1));
   }
-  const picked = library.find(item => item.id === libraryPick);
-  nodes.push(chipRow([
-    ['add gif, image or video', false, () => pickFile(MEDIA_ACCEPT, f => setThemeImage('disc', f))],
-    ['import skin', false, () => pickFile('.wsz,.wal,.vlt,.zip', importSkin)],
-    ...(library.length ? [['export all', false, exportLibraryAll]] : []),
-    ...(picked ? [
-      ['use as background', false, async () => setThemeImage('bg', await libraryBlob(picked.id), false)],
-      ['export', false, async () => saveBlob(await libraryBlob(picked.id), picked.name)],
-      ['delete', false, () => deleteFromLibrary(picked.id)],
-    ] : []),
-  ]));
 
-  nodes.push(el('h2', '', 'ring'), chipRow(THEME_CHOICES.ring.map(ring => [ring, theme.ring === ring, () => { setTheme({ ring }); renderStyle(); }])));
-  nodes.push(rangeField('glow', 'glow', 0, 2, .1));
+  if (styleTab === 'colours') {
+    nodes.push(el('h2', '', 'colours'), colourField('background', 'bg'), colourField('text', 'fg'),
+      selectField('accent', 'accentMode', [['auto', 'from each song'], ['fixed', 'always the same']]));
+    if (theme.accentMode === 'fixed') nodes.push(colourField('accent colour', 'accent'));
+    nodes.push(selectField('big title', 'titleColor', [['invert', 'invert over the ring'], ['fg', 'text colour'], ['accent', 'accent colour']]));
+    const warn = el('div', 'note', 'text is hard to read on this background. shift+t resets.');
+    warn.id = 'style-contrast';
+    warn.hidden = contrast(theme.fg, theme.bg) >= 3;
+    nodes.push(warn);
 
-  nodes.push(el('h2', '', 'colours'), colourField('background', 'bg'), colourField('text', 'fg'),
-    selectField('accent', 'accentMode', [['auto', 'from each song'], ['fixed', 'always the same']]));
-  if (theme.accentMode === 'fixed') nodes.push(colourField('accent colour', 'accent'));
-  nodes.push(selectField('big title', 'titleColor', [['invert', 'invert over the ring'], ['fg', 'text colour'], ['accent', 'accent colour']]));
-  const warn = el('div', 'note', 'text is hard to read on this background. shift+t resets.');
-  warn.id = 'style-contrast';
-  warn.hidden = contrast(theme.fg, theme.bg) >= 3;
-  nodes.push(warn);
+    nodes.push(el('h2', '', 'background'), chipRow([
+      ['choose gif, image or video', false, () => pickFile(MEDIA_ACCEPT, f => setThemeImage('bg', f))],
+      ...(themeMedia.bg ? [['remove', false, () => clearThemeImage('bg')]] : []),
+    ]));
+    if (themeMedia.bg) nodes.push(rangeField('dim', 'bgDim', 0, 1, .05));
+  }
 
-  nodes.push(el('h2', '', 'background'), chipRow([
-    ['choose gif, image or video', false, () => pickFile(MEDIA_ACCEPT, f => setThemeImage('bg', f))],
-    ...(themeMedia.bg ? [['remove', false, () => clearThemeImage('bg')]] : []),
-  ]));
-  if (themeMedia.bg) nodes.push(rangeField('dim', 'bgDim', 0, 1, .05));
-
-  nodes.push(el('h2', '', 'fonts'),
+  if (styleTab === 'fonts') nodes.push(el('h2', '', 'fonts'),
     selectField('title', 'displayFont', fontOptions()),
     selectField('everything else', 'uiFont', fontOptions()),
     rangeField('title weight', 'titleWeight', 100, 900, 100),
@@ -2921,30 +2974,32 @@ function renderStyle() {
     chipRow([['add font file', false, () => pickFile('.ttf,.otf,.woff,.woff2', addFont)]]),
     el('div', 'hint', 'ttf, otf or woff. You can also drop a font file on the window.'));
 
-  const saveName = el('input');
-  saveName.type = 'text';
-  saveName.placeholder = 'name this style';
-  saveName.setAttribute('aria-label', 'Name for this style');
-  const save = () => {
-    const name = saveName.value.trim();
-    if (!name) return saveName.focus();
-    store.set('themes', { ...store.get('themes', {}), [name]: theme });
-    toast('saved ' + name);
-    renderStyle();
-  };
-  saveName.addEventListener('keydown', e => { if (e.key === 'Enter') save(); });
-  nodes.push(el('h2', '', 'keep and share'), field('save as', saveName), chipRow([
-    ['save', false, save],
-    ['export', false, exportTheme],
-    ['import', false, () => pickFile('.json', importTheme)],
-    ['reset', false, resetTheme],
-    ...Object.keys(mine).map(name => ['delete ' + name, false, () => {
-      const left = { ...mine };
-      delete left[name];
-      store.set('themes', left);
+  if (styleTab === 'themes') {
+    const saveName = el('input');
+    saveName.type = 'text';
+    saveName.placeholder = 'name this style';
+    saveName.setAttribute('aria-label', 'Name for this style');
+    const save = () => {
+      const name = saveName.value.trim();
+      if (!name) return saveName.focus();
+      store.set('themes', { ...store.get('themes', {}), [name]: theme });
+      toast('saved ' + name);
       renderStyle();
-    }]),
-  ]), el('div', 'hint', 'Exports leave out images and font files. Esc closes this panel.'));
+    };
+    saveName.addEventListener('keydown', e => { if (e.key === 'Enter') save(); });
+    nodes.push(el('h2', '', 'keep and share'), field('save as', saveName), chipRow([
+      ['save', false, save],
+      ['export', false, exportTheme],
+      ['import', false, () => pickFile('.json', importTheme)],
+      ['reset', false, resetTheme],
+      ...Object.keys(mine).map(name => ['delete ' + name, false, () => {
+        const left = { ...mine };
+        delete left[name];
+        store.set('themes', left);
+        renderStyle();
+      }]),
+    ]), el('div', 'hint', 'Exports leave out images and font files. Esc closes this panel.'));
+  }
 
   panel.replaceChildren(...nodes);
   panel.scrollTop = keep;
